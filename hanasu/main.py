@@ -137,7 +137,7 @@ class Hanasu:
             print(f"[hanasu] Transcribed: {text}")
 
         if text:
-            inject_text(text)
+            inject_text(text, clear_after=self.config.clear_clipboard)
 
 
 def download_model(model: str = "small") -> None:

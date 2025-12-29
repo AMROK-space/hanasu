@@ -25,6 +25,7 @@ class Config:
     language: str
     audio_device: Optional[str]
     debug: bool
+    clear_clipboard: bool
 
 
 @dataclass
@@ -40,6 +41,7 @@ DEFAULT_CONFIG = {
     "language": "en",
     "audio_device": None,
     "debug": False,
+    "clear_clipboard": False,
 }
 
 
@@ -80,6 +82,7 @@ def load_config(config_dir: Path) -> Config:
         language=config_data["language"],
         audio_device=config_data["audio_device"],
         debug=config_data["debug"],
+        clear_clipboard=config_data["clear_clipboard"],
     )
 
 
