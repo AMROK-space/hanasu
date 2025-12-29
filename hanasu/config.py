@@ -1,9 +1,12 @@
 """Configuration loading and validation for Hanasu."""
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
@@ -60,6 +63,12 @@ def load_config(config_dir: Path) -> Config:
     if config_file.exists():
         with open(config_file, "r") as f:
             file_config = json.load(f)
+
+            # Warn about unrecognized keys
+            for key in file_config:
+                if key not in DEFAULT_CONFIG:
+                    logger.warning(f"Unrecognized config key: {key}")
+
             config_data.update(file_config)
 
     # Validate
