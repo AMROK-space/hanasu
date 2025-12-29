@@ -137,7 +137,7 @@ class Hanasu:
             print(f"[hanasu] Transcribed: {text}")
 
         if text:
-            inject_text(text)
+            inject_text(text, clear_after=self.config.clear_clipboard)
 
 
 def download_model(model: str = "small") -> None:
@@ -275,6 +275,7 @@ def get_status(config_dir: Path = DEFAULT_CONFIG_DIR) -> dict:
         status["model"] = config.model
         status["audio_device"] = config.audio_device
         status["debug"] = config.debug
+        status["clear_clipboard"] = config.clear_clipboard
 
     return status
 
@@ -300,6 +301,7 @@ def print_status(config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
         print(f"  Model: {status['model']}")
         print(f"  Audio device: {status.get('audio_device') or 'system default'}")
         print(f"  Debug mode: {status['debug']}")
+        print(f"  Clear clipboard: {status['clear_clipboard']}")
         print()
 
     print("Accessibility permission:", "GRANTED" if status["accessibility"] else "NOT GRANTED")

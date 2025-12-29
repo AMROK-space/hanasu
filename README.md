@@ -22,7 +22,7 @@ Local voice-to-text dictation for macOS using Whisper. By [AMROK](https://amrok.
 curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash
 ```
 
-Or clone and install manually:
+Or clone and install manually (recommended if you want to review the code first):
 
 ```bash
 git clone https://github.com/amrok-space/hanasu.git
@@ -57,7 +57,8 @@ Edit `~/.hanasu/config.json`:
   "model": "small",
   "language": "en",
   "audio_device": null,
-  "debug": false
+  "debug": false,
+  "clear_clipboard": false
 }
 ```
 
@@ -67,7 +68,8 @@ Edit `~/.hanasu/config.json`:
 - **model**: Whisper model size (`tiny`, `base`, `small`, `medium`, `large`)
 - **language**: Language code (e.g., `en`, `es`, `fr`)
 - **audio_device**: Specific microphone name, or `null` for system default
-- **debug**: Enable verbose logging
+- **debug**: Enable verbose logging (logs transcribed text to `~/.hanasu/hanasu.log`)
+- **clear_clipboard**: Clear clipboard after pasting transcribed text
 
 ## Custom Dictionary
 

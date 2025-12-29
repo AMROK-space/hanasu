@@ -207,3 +207,51 @@ class TestWaitForModifiersReleased:
 
                     # Should have exited due to timeout (function returns, doesn't hang)
                     assert True  # If we get here, timeout worked
+
+
+class TestClipboardClearing:
+    """Test clipboard clearing after paste."""
+
+    def test_clears_clipboard_after_paste_when_enabled(self):
+        """Clipboard is cleared after paste when clear_after=True."""
+        with patch("hanasu.injector.NSPasteboard") as mock_pb_class:
+            with patch("hanasu.injector._wait_for_modifiers_released"):
+                with patch("hanasu.injector._simulate_paste"):
+                    with patch("hanasu.injector.time.sleep"):
+                        mock_pasteboard = MagicMock()
+                        mock_pb_class.generalPasteboard.return_value = mock_pasteboard
+
+                        inject_text("hello world", clear_after=True)
+
+                        # clearContents should be called twice:
+                        # once before setting text, once after paste
+                        assert mock_pasteboard.clearContents.call_count == 2
+
+    def test_does_not_clear_clipboard_when_disabled(self):
+        """Clipboard is not cleared after paste when clear_after=False."""
+        with patch("hanasu.injector.NSPasteboard") as mock_pb_class:
+            with patch("hanasu.injector._wait_for_modifiers_released"):
+                with patch("hanasu.injector._simulate_paste"):
+                    with patch("hanasu.injector.time.sleep"):
+                        mock_pasteboard = MagicMock()
+                        mock_pb_class.generalPasteboard.return_value = mock_pasteboard
+
+                        inject_text("hello world", clear_after=False)
+
+                        # clearContents should only be called once (before setting text)
+                        assert mock_pasteboard.clearContents.call_count == 1
+
+    def test_clear_after_defaults_to_false(self):
+        """clear_after defaults to False for backwards compatibility."""
+        with patch("hanasu.injector.NSPasteboard") as mock_pb_class:
+            with patch("hanasu.injector._wait_for_modifiers_released"):
+                with patch("hanasu.injector._simulate_paste"):
+                    with patch("hanasu.injector.time.sleep"):
+                        mock_pasteboard = MagicMock()
+                        mock_pb_class.generalPasteboard.return_value = mock_pasteboard
+
+                        # Call without clear_after argument
+                        inject_text("hello world")
+
+                        # Should only clear once (default is False)
+                        assert mock_pasteboard.clearContents.call_count == 1

@@ -1,9 +1,12 @@
 """Configuration loading and validation for Hanasu."""
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
@@ -22,6 +25,7 @@ class Config:
     language: str
     audio_device: Optional[str]
     debug: bool
+    clear_clipboard: bool
 
 
 @dataclass
@@ -37,6 +41,7 @@ DEFAULT_CONFIG = {
     "language": "en",
     "audio_device": None,
     "debug": False,
+    "clear_clipboard": False,
 }
 
 
@@ -60,6 +65,12 @@ def load_config(config_dir: Path) -> Config:
     if config_file.exists():
         with open(config_file, "r") as f:
             file_config = json.load(f)
+
+            # Warn about unrecognized keys
+            for key in file_config:
+                if key not in DEFAULT_CONFIG:
+                    logger.warning(f"Unrecognized config key: {key}")
+
             config_data.update(file_config)
 
     # Validate
@@ -71,6 +82,7 @@ def load_config(config_dir: Path) -> Config:
         language=config_data["language"],
         audio_device=config_data["audio_device"],
         debug=config_data["debug"],
+        clear_clipboard=config_data["clear_clipboard"],
     )
 
 

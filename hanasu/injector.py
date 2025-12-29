@@ -13,11 +13,12 @@ from AppKit import NSPasteboard, NSPasteboardTypeString
 V_KEY_CODE = 0x09
 
 
-def inject_text(text: str) -> None:
+def inject_text(text: str, clear_after: bool = False) -> None:
     """Inject text at cursor position using clipboard paste.
 
     Args:
         text: Text to inject.
+        clear_after: If True, clear clipboard after paste.
     """
     if not text:
         return
@@ -36,6 +37,11 @@ def inject_text(text: str) -> None:
 
     # Simulate Cmd+V
     _simulate_paste()
+
+    # Clear clipboard after paste if requested
+    if clear_after:
+        time.sleep(0.1)  # Allow target app to complete paste
+        pasteboard.clearContents()
 
 
 def _simulate_paste() -> None:

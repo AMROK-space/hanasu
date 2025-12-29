@@ -157,3 +157,56 @@ class TestLoadDictionary:
 
         assert dictionary.replacements["py object see"] == "PyObjC"
         assert dictionary.replacements["k8s"] == "Kubernetes"
+
+
+class TestUnrecognizedConfigKeys:
+    """Test warnings for unrecognized config keys."""
+
+    def test_warns_on_unrecognized_config_key(self, tmp_path: Path, caplog):
+        """Unrecognized config keys trigger a warning."""
+        import logging
+
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({
+            "hotkey": "cmd+alt+v",
+            "typo_key": "some_value",
+        }))
+
+        with caplog.at_level(logging.WARNING):
+            load_config(config_dir=tmp_path)
+
+        assert "typo_key" in caplog.text
+        assert "unrecognized" in caplog.text.lower()
+
+    def test_warns_on_multiple_unrecognized_keys(self, tmp_path: Path, caplog):
+        """Multiple unrecognized keys each trigger warnings."""
+        import logging
+
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({
+            "hotkey": "cmd+alt+v",
+            "bad_key_1": "value1",
+            "bad_key_2": "value2",
+        }))
+
+        with caplog.at_level(logging.WARNING):
+            load_config(config_dir=tmp_path)
+
+        assert "bad_key_1" in caplog.text
+        assert "bad_key_2" in caplog.text
+
+    def test_no_warning_for_valid_keys_only(self, tmp_path: Path, caplog):
+        """No warnings when all config keys are recognized."""
+        import logging
+
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({
+            "hotkey": "cmd+alt+v",
+            "model": "small",
+            "language": "en",
+        }))
+
+        with caplog.at_level(logging.WARNING):
+            load_config(config_dir=tmp_path)
+
+        assert "unrecognized" not in caplog.text.lower()
