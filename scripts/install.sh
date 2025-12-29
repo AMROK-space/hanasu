@@ -19,7 +19,8 @@ echo
 # Check for uv
 if ! command -v uv &> /dev/null; then
     echo "Installing uv package manager..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Pin to specific version for reproducibility
+    curl -LsSf https://astral.sh/uv/0.9.18/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
