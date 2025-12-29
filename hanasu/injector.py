@@ -40,6 +40,7 @@ def inject_text(text: str, clear_after: bool = False) -> None:
 
     # Clear clipboard after paste if requested
     if clear_after:
+        time.sleep(0.1)  # Allow target app to complete paste
         pasteboard.clearContents()
 
 

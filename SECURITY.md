@@ -52,7 +52,7 @@ Hanasu is designed with privacy in mind:
 
 ### Clipboard Usage
 
-Hanasu uses the system clipboard to inject transcribed text (via Cmd+V simulation). Transcribed text briefly resides on the clipboard before being pasted. You can enable `clear_clipboard: true` in your config to clear the clipboard after each paste.
+Hanasu uses the system clipboard to inject transcribed text (via Cmd+V simulation). Transcribed text briefly resides on the clipboard before being pasted. You can set `"clear_clipboard": true` in your config to clear the clipboard after each paste.
 
 ### Debug Logging
 
