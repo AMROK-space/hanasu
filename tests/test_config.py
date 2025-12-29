@@ -9,6 +9,7 @@ import pytest
 from hanasu.config import (
     Config,
     load_config,
+    save_config,
     load_dictionary,
     DEFAULT_CONFIG,
     ConfigValidationError,
@@ -210,3 +211,68 @@ class TestUnrecognizedConfigKeys:
             load_config(config_dir=tmp_path)
 
         assert "unrecognized" not in caplog.text.lower()
+
+
+class TestSaveConfig:
+    """Test saving configuration to file."""
+
+    def test_saves_config_to_file(self, tmp_path: Path):
+        """save_config writes config to config.json."""
+        config = Config(
+            hotkey="cmd+shift+k",
+            model="small",
+            language="en",
+            audio_device=None,
+            debug=False,
+            clear_clipboard=False,
+        )
+
+        save_config(config, config_dir=tmp_path)
+
+        config_file = tmp_path / "config.json"
+        assert config_file.exists()
+
+        with open(config_file) as f:
+            saved = json.load(f)
+
+        assert saved["hotkey"] == "cmd+shift+k"
+
+    def test_preserves_other_config_values(self, tmp_path: Path):
+        """save_config preserves all config values."""
+        config = Config(
+            hotkey="f19",
+            model="medium",
+            language="es",
+            audio_device="AirPods",
+            debug=True,
+            clear_clipboard=True,
+        )
+
+        save_config(config, config_dir=tmp_path)
+
+        with open(tmp_path / "config.json") as f:
+            saved = json.load(f)
+
+        assert saved["hotkey"] == "f19"
+        assert saved["model"] == "medium"
+        assert saved["language"] == "es"
+        assert saved["audio_device"] == "AirPods"
+        assert saved["debug"] is True
+        assert saved["clear_clipboard"] is True
+
+    def test_creates_config_dir_if_missing(self, tmp_path: Path):
+        """save_config creates config directory if it doesn't exist."""
+        config_dir = tmp_path / "subdir" / ".hanasu"
+        config = Config(
+            hotkey="cmd+alt+v",
+            model="small",
+            language="en",
+            audio_device=None,
+            debug=False,
+            clear_clipboard=False,
+        )
+
+        save_config(config, config_dir=config_dir)
+
+        assert config_dir.exists()
+        assert (config_dir / "config.json").exists()

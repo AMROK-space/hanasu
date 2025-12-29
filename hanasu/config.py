@@ -100,6 +100,31 @@ def _validate_config(config_data: dict) -> None:
         raise ConfigValidationError("Invalid hotkey: cannot be empty")
 
 
+def save_config(config: Config, config_dir: Path) -> None:
+    """Save configuration to config file.
+
+    Creates config directory if it doesn't exist.
+
+    Args:
+        config: Configuration to save.
+        config_dir: Path to configuration directory.
+    """
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    config_file = config_dir / "config.json"
+    config_data = {
+        "hotkey": config.hotkey,
+        "model": config.model,
+        "language": config.language,
+        "audio_device": config.audio_device,
+        "debug": config.debug,
+        "clear_clipboard": config.clear_clipboard,
+    }
+
+    with open(config_file, "w") as f:
+        json.dump(config_data, f, indent=2)
+
+
 def load_dictionary(config_dir: Path) -> Dictionary:
     """Load user vocabulary dictionary.
 

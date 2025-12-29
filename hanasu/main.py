@@ -14,6 +14,7 @@ from hanasu.config import (
     Dictionary,
     load_config,
     load_dictionary,
+    save_config,
     DEFAULT_CONFIG,
 )
 from hanasu.recorder import Recorder, list_input_devices
@@ -69,6 +70,7 @@ class Hanasu:
         self._menubar_app = run_menubar_app(
             hotkey=self.config.hotkey,
             on_quit=self._on_quit,
+            on_hotkey_change=self._on_hotkey_change,
         )
 
         # Start hotkey listener
@@ -86,6 +88,68 @@ class Hanasu:
         """Handle quit from menu bar."""
         print("\nShutting down...")
         self.hotkey_listener.stop()
+
+    def _on_hotkey_change(self, new_hotkey: str) -> None:
+        """Handle hotkey change from menu bar.
+
+        Args:
+            new_hotkey: New hotkey string.
+        """
+        # Validate hotkey is not empty
+        if not new_hotkey or not new_hotkey.strip():
+            print("Error: Hotkey cannot be empty")
+            return
+
+        if self.config.debug:
+            print(f"[hanasu] Changing hotkey to: {new_hotkey}")
+
+        # Stop any in-progress recording before changing hotkey
+        if self._recording:
+            self._recording = False
+            self.recorder.stop()
+            if self._menubar_app:
+                self._menubar_app.setRecording_(False)
+            if self.config.debug:
+                print("[hanasu] Stopped recording due to hotkey change")
+
+        # Stop old listener before creating new one
+        self.hotkey_listener.stop()
+
+        # Try to create new listener before saving config
+        try:
+            new_listener = HotkeyListener(
+                hotkey=new_hotkey,
+                on_press=self._on_hotkey_press,
+                on_release=self._on_hotkey_release,
+            )
+        except Exception as e:
+            # Restore old listener if new hotkey is invalid
+            print(f"Error: Invalid hotkey '{new_hotkey}': {e}")
+            self.hotkey_listener.start()
+            return
+
+        # New listener is valid, now update config
+        self.config = Config(
+            hotkey=new_hotkey,
+            model=self.config.model,
+            language=self.config.language,
+            audio_device=self.config.audio_device,
+            debug=self.config.debug,
+            clear_clipboard=self.config.clear_clipboard,
+        )
+
+        # Save to file
+        save_config(self.config, self.config_dir)
+
+        # Switch to new listener
+        self.hotkey_listener = new_listener
+        self.hotkey_listener.start()
+
+        # Update menu bar display
+        if self._menubar_app:
+            self._menubar_app.setHotkey_(new_hotkey)
+
+        print(f"Hotkey changed to: {new_hotkey}")
 
     def _on_hotkey_press(self) -> None:
         """Called when hotkey is pressed - start recording."""

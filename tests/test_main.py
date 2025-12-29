@@ -74,6 +74,7 @@ class TestHanasu:
                                     language="en",
                                     audio_device=None,
                                     debug=False,
+                                    clear_clipboard=True,
                                 )
                                 mock_dict.return_value = MagicMock(terms=[], replacements={})
 
@@ -91,7 +92,7 @@ class TestHanasu:
 
                                 mock_recorder.stop.assert_called_once()
                                 mock_transcriber.transcribe.assert_called_once()
-                                mock_inject.assert_called_once_with("hello world")
+                                mock_inject.assert_called_once_with("hello world", clear_after=True)
 
 
 class TestRunSetup:

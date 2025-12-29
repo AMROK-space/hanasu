@@ -5,10 +5,12 @@ from typing import Callable, Optional
 
 import objc
 from AppKit import (
+    NSAlert,
     NSApplication,
     NSMenu,
     NSMenuItem,
     NSStatusBar,
+    NSTextField,
     NSVariableStatusItemLength,
     NSImage,
     NSFont,
@@ -26,7 +28,7 @@ class MenuBarApp(NSObject):
         """Initialize with callback functions.
 
         Args:
-            callbacks: Dict with 'on_quit' callback.
+            callbacks: Dict with 'on_quit' and 'on_hotkey_change' callbacks.
         """
         self = objc.super(MenuBarApp, self).init()
         if self is None:
@@ -57,6 +59,13 @@ class MenuBarApp(NSObject):
         )
         self._status_menu_item.setEnabled_(False)
         menu.addItem_(self._status_menu_item)
+
+        # Change Hotkey item
+        change_hotkey_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Change Hotkey...", "changeHotkey:", ""
+        )
+        change_hotkey_item.setTarget_(self)
+        menu.addItem_(change_hotkey_item)
 
         # Separator
         menu.addItem_(NSMenuItem.separatorItem())
@@ -107,6 +116,29 @@ class MenuBarApp(NSObject):
         if self._status_menu_item:
             self._status_menu_item.setTitle_(f"Hotkey: {hotkey}")
 
+    def changeHotkey_(self, sender):
+        """Handle change hotkey menu item."""
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Change Hotkey")
+        alert.setInformativeText_("Enter the new hotkey (e.g., cmd+alt+v, f19):")
+        alert.addButtonWithTitle_("OK")
+        alert.addButtonWithTitle_("Cancel")
+
+        # Add text field
+        text_field = NSTextField.alloc().initWithFrame_(((0, 0), (200, 24)))
+        text_field.setStringValue_(self._hotkey_display)
+        alert.setAccessoryView_(text_field)
+
+        # Run modal
+        response = alert.runModal()
+
+        # Check if OK was clicked (first button = 1000)
+        if response == 1000:
+            new_hotkey = text_field.stringValue().strip()
+            if new_hotkey and new_hotkey != self._hotkey_display:
+                if self._callbacks.get("on_hotkey_change"):
+                    self._callbacks["on_hotkey_change"](new_hotkey)
+
     def quit_(self, sender):
         """Handle quit menu item."""
         if self._callbacks.get("on_quit"):
@@ -117,12 +149,14 @@ class MenuBarApp(NSObject):
 def run_menubar_app(
     hotkey: str,
     on_quit: Optional[Callable[[], None]] = None,
+    on_hotkey_change: Optional[Callable[[str], None]] = None,
 ) -> MenuBarApp:
     """Create and run the menu bar app.
 
     Args:
         hotkey: Hotkey string to display in menu.
         on_quit: Callback when user quits from menu.
+        on_hotkey_change: Callback when user changes hotkey (receives new hotkey string).
 
     Returns:
         MenuBarApp instance for updating state.
@@ -132,6 +166,7 @@ def run_menubar_app(
     # Create delegate
     delegate = MenuBarApp.alloc().initWithCallbacks_({
         "on_quit": on_quit,
+        "on_hotkey_change": on_hotkey_change,
     })
     delegate.setHotkey_(hotkey)
     delegate.setupStatusBar()
