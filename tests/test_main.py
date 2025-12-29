@@ -7,6 +7,7 @@ import pytest
 from hanasu.main import (
     Hanasu,
     run_setup,
+    run_update,
     get_status,
 )
 
@@ -135,3 +136,43 @@ class TestGetStatus:
 
             assert "config_dir" in status
             assert "audio_devices" in status
+
+
+class TestRunUpdate:
+    """Test update command."""
+
+    def test_runs_git_pull_in_source_directory(self, tmp_path: Path):
+        """Update runs git pull in the source directory."""
+        source_dir = tmp_path / ".hanasu-src"
+        source_dir.mkdir()
+
+        with patch("hanasu.main.subprocess.run") as mock_run:
+            with patch("hanasu.main.Path.home", return_value=tmp_path):
+                mock_run.return_value = MagicMock(returncode=0)
+
+                run_update()
+
+                # Check git pull was called
+                calls = [str(c) for c in mock_run.call_args_list]
+                assert any("git" in c and "pull" in c for c in calls)
+
+    def test_runs_uv_sync_after_git_pull(self, tmp_path: Path):
+        """Update runs uv sync after git pull."""
+        source_dir = tmp_path / ".hanasu-src"
+        source_dir.mkdir()
+
+        with patch("hanasu.main.subprocess.run") as mock_run:
+            with patch("hanasu.main.Path.home", return_value=tmp_path):
+                mock_run.return_value = MagicMock(returncode=0)
+
+                run_update()
+
+                # Check uv sync was called
+                calls = [str(c) for c in mock_run.call_args_list]
+                assert any("uv" in c and "sync" in c for c in calls)
+
+    def test_raises_error_when_source_dir_missing(self, tmp_path: Path):
+        """Update raises error if source directory doesn't exist."""
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            with pytest.raises(FileNotFoundError, match="source"):
+                run_update()

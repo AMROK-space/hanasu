@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -166,6 +167,51 @@ def download_model(model: str = "small") -> None:
     except Exception as e:
         print(f"Warning: Could not fully verify model download: {e}")
         print("Model files should be cached for future use.")
+
+
+def run_update() -> None:
+    """Update Hanasu to the latest version.
+
+    Pulls latest code from git and syncs dependencies.
+
+    Raises:
+        FileNotFoundError: If source directory doesn't exist.
+        RuntimeError: If git or uv commands fail.
+    """
+    source_dir = Path.home() / ".hanasu-src"
+
+    if not source_dir.exists():
+        raise FileNotFoundError(
+            f"Source directory not found: {source_dir}\n"
+            "Please reinstall using the install script."
+        )
+
+    print("Updating Hanasu...")
+
+    # Pull latest code
+    print("Pulling latest changes...")
+    result = subprocess.run(
+        ["git", "pull"],
+        cwd=source_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git pull failed: {result.stderr}")
+    print(result.stdout.strip() or "Already up to date.")
+
+    # Sync dependencies
+    print("Syncing dependencies...")
+    result = subprocess.run(
+        ["uv", "sync"],
+        cwd=source_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"uv sync failed: {result.stderr}")
+
+    print("Update complete! Restart Hanasu to use the new version.")
 
 
 def check_accessibility() -> bool:
@@ -340,14 +386,20 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["setup"],
-        help="Command to run (setup for first-time setup)",
+        choices=["setup", "update"],
+        help="Command to run (setup for first-time setup, update to update)",
     )
 
     args = parser.parse_args()
 
     if args.command == "setup":
         run_setup(args.config_dir)
+    elif args.command == "update":
+        try:
+            run_update()
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"Error: {e}")
+            sys.exit(1)
     elif args.status:
         print_status(args.config_dir)
     else:
