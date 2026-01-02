@@ -1,11 +1,11 @@
 """Tests for transcription functionality."""
 
-from unittest.mock import patch, MagicMock
-import numpy as np
-import pytest
+from unittest.mock import patch
 
-from hanasu.transcriber import Transcriber, apply_replacements
+import numpy as np
+
 from hanasu.config import Dictionary
+from hanasu.transcriber import Transcriber, apply_replacements
 
 
 class TestTranscriberTranscribe:
@@ -14,9 +14,7 @@ class TestTranscriberTranscribe:
     def test_transcribes_audio_to_text(self):
         """Audio buffer is transcribed to text."""
         with patch("hanasu.transcriber.mlx_whisper") as mock_whisper:
-            mock_whisper.transcribe.return_value = {
-                "text": " Hello, world!"
-            }
+            mock_whisper.transcribe.return_value = {"text": " Hello, world!"}
 
             transcriber = Transcriber(model="small")
             audio = np.array([0.1, 0.2, 0.3], dtype=np.float32)
@@ -27,9 +25,7 @@ class TestTranscriberTranscribe:
     def test_strips_leading_whitespace_from_result(self):
         """Leading/trailing whitespace is stripped from transcription."""
         with patch("hanasu.transcriber.mlx_whisper") as mock_whisper:
-            mock_whisper.transcribe.return_value = {
-                "text": "   Some text with spaces   "
-            }
+            mock_whisper.transcribe.return_value = {"text": "   Some text with spaces   "}
 
             transcriber = Transcriber(model="small")
             result = transcriber.transcribe(np.array([0.1], dtype=np.float32))
@@ -74,9 +70,7 @@ class TestTranscriberDictionary:
     def test_applies_replacements_after_transcription(self):
         """Replacement rules are applied to transcribed text."""
         with patch("hanasu.transcriber.mlx_whisper") as mock_whisper:
-            mock_whisper.transcribe.return_value = {
-                "text": " I use py object see for macOS"
-            }
+            mock_whisper.transcribe.return_value = {"text": " I use py object see for macOS"}
 
             dictionary = Dictionary(
                 terms=[],

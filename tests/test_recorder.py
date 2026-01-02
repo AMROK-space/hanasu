@@ -1,12 +1,13 @@
 """Tests for audio recording functionality."""
 
 from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
 
 from hanasu.recorder import (
-    Recorder,
     DeviceNotFoundError,
+    Recorder,
     list_input_devices,
 )
 
@@ -85,7 +86,7 @@ class TestRecorderDevice:
 
     def test_uses_default_device_when_none_specified(self):
         """Recorder uses system default when no device specified."""
-        with patch("hanasu.recorder.sd") as mock_sd:
+        with patch("hanasu.recorder.sd"):
             recorder = Recorder(device=None)
 
             assert recorder.device is None

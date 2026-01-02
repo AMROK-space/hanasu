@@ -1,14 +1,15 @@
 """Tests for hotkey handling functionality."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from hanasu.hotkey import (
-    HotkeyListener,
-    parse_hotkey,
-    HotkeyParseError,
     KEYCODE_MAP,
     MODIFIER_FLAGS,
+    HotkeyListener,
+    HotkeyParseError,
+    parse_hotkey,
 )
 
 

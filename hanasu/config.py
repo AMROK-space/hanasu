@@ -4,13 +4,13 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
     """Raised when configuration validation fails."""
+
     pass
 
 
@@ -20,10 +20,11 @@ VALID_MODELS = {"tiny", "base", "small", "medium", "large"}
 @dataclass
 class Config:
     """Application configuration."""
+
     hotkey: str
     model: str
     language: str
-    audio_device: Optional[str]
+    audio_device: str | None
     debug: bool
     clear_clipboard: bool
 
@@ -31,6 +32,7 @@ class Config:
 @dataclass
 class Dictionary:
     """User vocabulary dictionary."""
+
     terms: list[str] = field(default_factory=list)
     replacements: dict[str, str] = field(default_factory=dict)
 
@@ -63,7 +65,7 @@ def load_config(config_dir: Path) -> Config:
 
     # Merge with file config if it exists
     if config_file.exists():
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             file_config = json.load(f)
 
             # Warn about unrecognized keys
@@ -135,7 +137,7 @@ def load_dictionary(config_dir: Path) -> Dictionary:
     if not dict_file.exists():
         return Dictionary()
 
-    with open(dict_file, "r") as f:
+    with open(dict_file) as f:
         data = json.load(f)
 
     return Dictionary(

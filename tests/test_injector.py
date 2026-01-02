@@ -1,12 +1,11 @@
 """Tests for text injection functionality."""
 
-from unittest.mock import patch, MagicMock, call
-import pytest
+from unittest.mock import MagicMock, call, patch
 
 from hanasu.injector import (
-    inject_text,
     _simulate_paste,
     _wait_for_modifiers_released,
+    inject_text,
 )
 
 
@@ -120,9 +119,7 @@ class TestSimulatePaste:
                 )
 
                 # Key up should be posted
-                mock_quartz.CGEventPost.assert_any_call(
-                    mock_quartz.kCGSessionEventTap, mock_key_up
-                )
+                mock_quartz.CGEventPost.assert_any_call(mock_quartz.kCGSessionEventTap, mock_key_up)
 
     def test_delay_between_key_down_and_up(self):
         """Small delay between key-down and key-up for event processing."""

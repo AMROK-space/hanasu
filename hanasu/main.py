@@ -4,25 +4,23 @@ import argparse
 import json
 import subprocess
 import sys
-import time
+import threading
 from pathlib import Path
-from typing import Optional
 
 from hanasu import __version__
 from hanasu.config import (
+    DEFAULT_CONFIG,
     Config,
-    Dictionary,
     load_config,
     load_dictionary,
     save_config,
-    DEFAULT_CONFIG,
 )
-from hanasu.recorder import Recorder, list_input_devices
-from hanasu.transcriber import Transcriber
 from hanasu.hotkey import HotkeyListener
 from hanasu.injector import inject_text
-from hanasu.menubar import run_menubar_app, start_app_loop, stop_app_loop
-
+from hanasu.menubar import run_menubar_app, start_app_loop
+from hanasu.recorder import Recorder, list_input_devices
+from hanasu.transcriber import Transcriber
+from hanasu.updater import check_for_update
 
 DEFAULT_CONFIG_DIR = Path.home() / ".hanasu"
 
@@ -71,7 +69,13 @@ class Hanasu:
             hotkey=self.config.hotkey,
             on_quit=self._on_quit,
             on_hotkey_change=self._on_hotkey_change,
+            on_update=self._on_update,
+            version=__version__,
         )
+
+        # Check for updates in background
+        update_thread = threading.Thread(target=self._check_for_updates, daemon=True)
+        update_thread.start()
 
         # Start hotkey listener
         self.hotkey_listener.start()
@@ -83,6 +87,50 @@ class Hanasu:
             print("\nShutting down...")
         finally:
             self.hotkey_listener.stop()
+
+    def _check_for_updates(self) -> None:
+        """Check for updates in background thread."""
+        try:
+            status = check_for_update(__version__, cache_dir=self.config_dir)
+            if self._menubar_app:
+                self._menubar_app.setUpdateStatus_(status)
+
+            if self.config.debug:
+                if status.update_available:
+                    print(f"[hanasu] Update available: v{status.latest_version}")
+                elif status.checked:
+                    print("[hanasu] Up to date")
+                else:
+                    print("[hanasu] Could not check for updates")
+        except Exception as e:
+            if self.config.debug:
+                print(f"[hanasu] Error checking for updates: {e}")
+
+    def _on_update(self) -> None:
+        """Handle update request from menu bar."""
+        # Prevent multiple concurrent updates
+        if getattr(self, "_update_in_progress", False):
+            return
+        self._update_in_progress = True
+
+        if self._menubar_app:
+            self._menubar_app.setUpdateInProgress()
+
+        # Run update in background thread
+        def do_update():
+            try:
+                run_update()
+                if self._menubar_app:
+                    self._menubar_app.setUpdateComplete()
+            except Exception as e:
+                print(f"Update failed: {e}")
+                if self._menubar_app:
+                    self._menubar_app.setUpdateFailed()
+            finally:
+                self._update_in_progress = False
+
+        update_thread = threading.Thread(target=do_update, daemon=True)
+        update_thread.start()
 
     def _on_quit(self) -> None:
         """Handle quit from menu bar."""
@@ -212,6 +260,7 @@ def download_model(model: str = "small") -> None:
         model: Model size to download.
     """
     import mlx_whisper
+
     from hanasu.transcriber import MODEL_PATHS
 
     model_path = MODEL_PATHS.get(model, MODEL_PATHS["small"])
@@ -219,6 +268,7 @@ def download_model(model: str = "small") -> None:
 
     # Trigger download by doing a dummy transcription
     import numpy as np
+
     dummy_audio = np.zeros(16000, dtype=np.float32)  # 1 second of silence
 
     try:
@@ -246,8 +296,7 @@ def run_update() -> None:
 
     if not source_dir.exists():
         raise FileNotFoundError(
-            f"Source directory not found: {source_dir}\n"
-            "Please reinstall using the install script."
+            f"Source directory not found: {source_dir}\nPlease reinstall using the install script."
         )
 
     print("Updating Hanasu...")
@@ -286,6 +335,7 @@ def check_accessibility() -> bool:
     """
     try:
         import Quartz
+
         # Try to create an event source - will fail without permission
         source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
         return source is not None

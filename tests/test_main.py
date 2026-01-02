@@ -1,14 +1,15 @@
 """Tests for main orchestration and CLI."""
 
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from hanasu.main import (
     Hanasu,
+    get_status,
     run_setup,
     run_update,
-    get_status,
 )
 
 
@@ -80,7 +81,9 @@ class TestHanasu:
 
                                 mock_recorder = MagicMock()
                                 # Need at least 8000 samples (0.5s at 16kHz) to pass minimum length check
-                                mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32) * 0.1
+                                mock_recorder.stop.return_value = (
+                                    np.ones(16000, dtype=np.float32) * 0.1
+                                )
                                 mock_recorder_class.return_value = mock_recorder
 
                                 mock_transcriber = MagicMock()

@@ -5,9 +5,9 @@ Based on Maccy clipboard manager's proven implementation.
 """
 
 import time
+
 import Quartz
 from AppKit import NSPasteboard, NSPasteboardTypeString
-
 
 # Virtual key code for 'v' on US QWERTY keyboard
 V_KEY_CODE = 0x09
@@ -57,8 +57,9 @@ def _simulate_paste() -> None:
     if source:
         Quartz.CGEventSourceSetLocalEventsFilterDuringSuppressionState(
             source,
-            Quartz.kCGEventFilterMaskPermitLocalMouseEvents | Quartz.kCGEventFilterMaskPermitSystemDefinedEvents,
-            Quartz.kCGEventSuppressionStateSuppressionInterval
+            Quartz.kCGEventFilterMaskPermitLocalMouseEvents
+            | Quartz.kCGEventFilterMaskPermitSystemDefinedEvents,
+            Quartz.kCGEventSuppressionStateSuppressionInterval,
         )
 
     # Create key down event with Command flag
@@ -89,10 +90,10 @@ def _wait_for_modifiers_released(timeout: float = 1.0) -> None:
         flags = Quartz.CGEventSourceFlagsState(Quartz.kCGEventSourceStateCombinedSessionState)
 
         modifier_mask = (
-            Quartz.kCGEventFlagMaskShift |
-            Quartz.kCGEventFlagMaskControl |
-            Quartz.kCGEventFlagMaskAlternate |
-            Quartz.kCGEventFlagMaskCommand
+            Quartz.kCGEventFlagMaskShift
+            | Quartz.kCGEventFlagMaskControl
+            | Quartz.kCGEventFlagMaskAlternate
+            | Quartz.kCGEventFlagMaskCommand
         )
 
         if not (flags & modifier_mask):

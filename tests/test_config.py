@@ -1,18 +1,16 @@
 """Tests for configuration loading and validation."""
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from hanasu.config import (
     Config,
-    load_config,
-    save_config,
-    load_dictionary,
-    DEFAULT_CONFIG,
     ConfigValidationError,
+    load_config,
+    load_dictionary,
+    save_config,
 )
 
 
@@ -134,9 +132,7 @@ class TestLoadDictionary:
     def test_loads_terms_from_dictionary_file(self, tmp_path: Path):
         """Custom terms are loaded from dictionary file."""
         dict_file = tmp_path / "dictionary.json"
-        dict_file.write_text(json.dumps({
-            "terms": ["AMROK", "PyObjC", "mlx-whisper"]
-        }))
+        dict_file.write_text(json.dumps({"terms": ["AMROK", "PyObjC", "mlx-whisper"]}))
 
         dictionary = load_dictionary(config_dir=tmp_path)
 
@@ -147,12 +143,9 @@ class TestLoadDictionary:
     def test_loads_replacements_from_dictionary_file(self, tmp_path: Path):
         """Replacement rules are loaded from dictionary file."""
         dict_file = tmp_path / "dictionary.json"
-        dict_file.write_text(json.dumps({
-            "replacements": {
-                "py object see": "PyObjC",
-                "k8s": "Kubernetes"
-            }
-        }))
+        dict_file.write_text(
+            json.dumps({"replacements": {"py object see": "PyObjC", "k8s": "Kubernetes"}})
+        )
 
         dictionary = load_dictionary(config_dir=tmp_path)
 
@@ -168,10 +161,14 @@ class TestUnrecognizedConfigKeys:
         import logging
 
         config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps({
-            "hotkey": "cmd+alt+v",
-            "typo_key": "some_value",
-        }))
+        config_file.write_text(
+            json.dumps(
+                {
+                    "hotkey": "cmd+alt+v",
+                    "typo_key": "some_value",
+                }
+            )
+        )
 
         with caplog.at_level(logging.WARNING):
             load_config(config_dir=tmp_path)
@@ -184,11 +181,15 @@ class TestUnrecognizedConfigKeys:
         import logging
 
         config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps({
-            "hotkey": "cmd+alt+v",
-            "bad_key_1": "value1",
-            "bad_key_2": "value2",
-        }))
+        config_file.write_text(
+            json.dumps(
+                {
+                    "hotkey": "cmd+alt+v",
+                    "bad_key_1": "value1",
+                    "bad_key_2": "value2",
+                }
+            )
+        )
 
         with caplog.at_level(logging.WARNING):
             load_config(config_dir=tmp_path)
@@ -201,11 +202,15 @@ class TestUnrecognizedConfigKeys:
         import logging
 
         config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps({
-            "hotkey": "cmd+alt+v",
-            "model": "small",
-            "language": "en",
-        }))
+        config_file.write_text(
+            json.dumps(
+                {
+                    "hotkey": "cmd+alt+v",
+                    "model": "small",
+                    "language": "en",
+                }
+            )
+        )
 
         with caplog.at_level(logging.WARNING):
             load_config(config_dir=tmp_path)

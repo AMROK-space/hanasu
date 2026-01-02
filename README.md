@@ -39,7 +39,7 @@ cd hanasu
 After installation, Hanasu runs in your menu bar:
 - **Microphone icon (🎤)** - Ready, waiting for hotkey
 - **Red circle (🔴)** - Recording in progress
-- **Click the icon** - See hotkey, quit the app
+- **Click the icon** - See hotkey, version, update status, and quit
 
 **Default hotkey:** `Cmd+Option+V` (hold to record, release to type)
 
