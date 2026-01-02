@@ -9,6 +9,7 @@ from AppKit import (
     NSApplication,
     NSMenu,
     NSMenuItem,
+    NSModalPanelRunLoopMode,
     NSStatusBar,
     NSTextField,
     NSVariableStatusItemLength,
@@ -17,7 +18,7 @@ from AppKit import (
     NSAttributedString,
     NSFontAttributeName,
 )
-from Foundation import NSObject
+from Foundation import NSObject, NSArray, NSDefaultRunLoopMode
 from PyObjCTools import AppHelper
 
 
@@ -124,10 +125,27 @@ class MenuBarApp(NSObject):
         alert.addButtonWithTitle_("OK")
         alert.addButtonWithTitle_("Cancel")
 
-        # Add text field
+        # Add text field with proper configuration for editing
         text_field = NSTextField.alloc().initWithFrame_(((0, 0), (200, 24)))
         text_field.setStringValue_(self._hotkey_display)
+        text_field.setEditable_(True)
+        text_field.setSelectable_(True)
+        text_field.setBezeled_(True)
+        text_field.setDrawsBackground_(True)
         alert.setAccessoryView_(text_field)
+
+        # Force layout so the window is created before setting first responder
+        alert.layout()
+
+        # Use delayed selector with modal run loop mode to set first responder
+        # This ensures the text field receives keyboard focus when the modal opens
+        modes = NSArray.arrayWithObjects_(NSDefaultRunLoopMode, NSModalPanelRunLoopMode, None)
+        text_field.performSelector_withObject_afterDelay_inModes_(
+            "selectText:",
+            None,
+            0.0,
+            modes,
+        )
 
         # Run modal
         response = alert.runModal()
