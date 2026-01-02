@@ -1,12 +1,11 @@
 """Transcription functionality using mlx-whisper."""
 
 import re
-from typing import Optional
-import numpy as np
+
 import mlx_whisper
+import numpy as np
 
 from hanasu.config import Dictionary
-
 
 # Model name to mlx-community HuggingFace path
 MODEL_PATHS = {
@@ -35,7 +34,7 @@ class Transcriber:
     def transcribe(
         self,
         audio: np.ndarray,
-        dictionary: Optional[Dictionary] = None,
+        dictionary: Dictionary | None = None,
     ) -> str:
         """Transcribe audio to text.
 

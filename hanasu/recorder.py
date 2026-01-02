@@ -1,9 +1,7 @@
 """Audio recording functionality for Hanasu."""
 
-from typing import Optional
 import numpy as np
 import sounddevice as sd
-
 
 # Whisper expects 16kHz sample rate
 SAMPLE_RATE = 16000
@@ -11,13 +9,14 @@ SAMPLE_RATE = 16000
 
 class DeviceNotFoundError(Exception):
     """Raised when specified audio device is not found."""
+
     pass
 
 
 class Recorder:
     """Records audio from microphone."""
 
-    def __init__(self, device: Optional[str] = None):
+    def __init__(self, device: str | None = None):
         """Initialize recorder with optional device name.
 
         Args:
@@ -28,7 +27,7 @@ class Recorder:
         """
         self.device = device
         self._buffer: list[np.ndarray] = []
-        self._stream: Optional[sd.InputStream] = None
+        self._stream: sd.InputStream | None = None
         self._recording = False
 
         # Validate device exists if specified
@@ -36,8 +35,7 @@ class Recorder:
             available = list_input_devices()
             if device not in available:
                 raise DeviceNotFoundError(
-                    f"Audio device not found: {device}. "
-                    f"Available devices: {', '.join(available)}"
+                    f"Audio device not found: {device}. Available devices: {', '.join(available)}"
                 )
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time, status) -> None:
@@ -80,8 +78,4 @@ def list_input_devices() -> list[str]:
         List of device names that have input channels.
     """
     devices = sd.query_devices()
-    return [
-        d["name"]
-        for d in devices
-        if d["max_input_channels"] > 0
-    ]
+    return [d["name"] for d in devices if d["max_input_channels"] > 0]

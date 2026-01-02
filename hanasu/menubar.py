@@ -1,7 +1,7 @@
 """macOS menu bar integration using PyObjC."""
 
-import threading
-from typing import Callable, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import objc
 from AppKit import (
@@ -13,13 +13,12 @@ from AppKit import (
     NSStatusBar,
     NSTextField,
     NSVariableStatusItemLength,
-    NSImage,
-    NSFont,
-    NSAttributedString,
-    NSFontAttributeName,
 )
-from Foundation import NSObject, NSArray, NSDefaultRunLoopMode
+from Foundation import NSArray, NSDefaultRunLoopMode, NSObject
 from PyObjCTools import AppHelper
+
+if TYPE_CHECKING:
+    from hanasu.updater import UpdateStatus
 
 
 class MenuBarApp(NSObject):
@@ -29,7 +28,7 @@ class MenuBarApp(NSObject):
         """Initialize with callback functions.
 
         Args:
-            callbacks: Dict with 'on_quit' and 'on_hotkey_change' callbacks.
+            callbacks: Dict with 'on_quit', 'on_hotkey_change', and 'on_update' callbacks.
         """
         self = objc.super(MenuBarApp, self).init()
         if self is None:
@@ -38,13 +37,20 @@ class MenuBarApp(NSObject):
         self._callbacks = callbacks
         self._status_item = None
         self._status_menu_item = None
+        self._version_menu_item = None
+        self._update_menu_item = None
+        self._update_status = None
         self._is_recording = False
         self._hotkey_display = "?"
 
         return self
 
-    def setupStatusBar(self):
-        """Set up the status bar item and menu."""
+    def setupStatusBar(self, version: str = ""):
+        """Set up the status bar item and menu.
+
+        Args:
+            version: Current app version to display.
+        """
         status_bar = NSStatusBar.systemStatusBar()
         self._status_item = status_bar.statusItemWithLength_(NSVariableStatusItemLength)
 
@@ -71,10 +77,27 @@ class MenuBarApp(NSObject):
         # Separator
         menu.addItem_(NSMenuItem.separatorItem())
 
-        # Quit item
-        quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Quit", "quit:", "q"
+        # Version display (disabled, just for display)
+        version_text = f"Version {version}" if version else "Version unknown"
+        self._version_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            version_text, None, ""
         )
+        self._version_menu_item.setEnabled_(False)
+        menu.addItem_(self._version_menu_item)
+
+        # Update status item (clickable when update available)
+        self._update_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Checking for updates...", "triggerUpdate:", ""
+        )
+        self._update_menu_item.setTarget_(self)
+        self._update_menu_item.setEnabled_(False)
+        menu.addItem_(self._update_menu_item)
+
+        # Separator
+        menu.addItem_(NSMenuItem.separatorItem())
+
+        # Quit item
+        quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Quit", "quit:", "q")
         quit_item.setTarget_(self)
         menu.addItem_(quit_item)
 
@@ -84,10 +107,10 @@ class MenuBarApp(NSObject):
         """Update the status bar title based on recording state."""
         if self._is_recording:
             # Red circle when recording
-            title = "\U0001F534"  # Red circle emoji
+            title = "\U0001f534"  # Red circle emoji
         else:
             # Microphone when idle
-            title = "\U0001F3A4"  # Microphone emoji
+            title = "\U0001f3a4"  # Microphone emoji
 
         self._status_item.setTitle_(title)
 
@@ -157,6 +180,63 @@ class MenuBarApp(NSObject):
                 if self._callbacks.get("on_hotkey_change"):
                     self._callbacks["on_hotkey_change"](new_hotkey)
 
+    def setUpdateStatus_(self, status: "UpdateStatus"):
+        """Update the update status display (thread-safe).
+
+        Args:
+            status: UpdateStatus with check results.
+        """
+        self._update_status = status
+        # Schedule UI update on main thread
+        self.performSelectorOnMainThread_withObject_waitUntilDone_("applyUpdateStatus", None, False)
+
+    def applyUpdateStatus(self):
+        """Apply update status on main thread."""
+        status = self._update_status
+        if not self._update_menu_item or not status:
+            return
+
+        if not status.checked:
+            self._update_menu_item.setTitle_("Unable to check for updates")
+            self._update_menu_item.setEnabled_(False)
+        elif status.update_available:
+            self._update_menu_item.setTitle_(f"⬆ Update available ({status.latest_version})")
+            self._update_menu_item.setEnabled_(True)
+        else:
+            self._update_menu_item.setTitle_("✓ Up to date")
+            self._update_menu_item.setEnabled_(False)
+
+    def setUpdateInProgress(self):
+        """Show update in progress state (thread-safe)."""
+        self._pending_update_title = "⏳ Updating..."
+        self._pending_update_enabled = False
+        self.performSelectorOnMainThread_withObject_waitUntilDone_("applyUpdateTitle", None, False)
+
+    def setUpdateComplete(self):
+        """Show update complete state (thread-safe)."""
+        self._pending_update_title = "✓ Updated! Restart to apply"
+        self._pending_update_enabled = False
+        self.performSelectorOnMainThread_withObject_waitUntilDone_("applyUpdateTitle", None, False)
+
+    def setUpdateFailed(self):
+        """Show update failed state (thread-safe)."""
+        self._pending_update_title = "✗ Update failed - Click to retry"
+        self._pending_update_enabled = True
+        self.performSelectorOnMainThread_withObject_waitUntilDone_("applyUpdateTitle", None, False)
+
+    def applyUpdateTitle(self):
+        """Apply pending update title on main thread."""
+        if self._update_menu_item:
+            if hasattr(self, "_pending_update_title"):
+                self._update_menu_item.setTitle_(self._pending_update_title)
+            if hasattr(self, "_pending_update_enabled"):
+                self._update_menu_item.setEnabled_(self._pending_update_enabled)
+
+    def triggerUpdate_(self, sender):
+        """Handle update menu item click."""
+        if self._callbacks.get("on_update"):
+            self._callbacks["on_update"]()
+
     def quit_(self, sender):
         """Handle quit menu item."""
         if self._callbacks.get("on_quit"):
@@ -166,8 +246,10 @@ class MenuBarApp(NSObject):
 
 def run_menubar_app(
     hotkey: str,
-    on_quit: Optional[Callable[[], None]] = None,
-    on_hotkey_change: Optional[Callable[[str], None]] = None,
+    on_quit: Callable[[], None] | None = None,
+    on_hotkey_change: Callable[[str], None] | None = None,
+    on_update: Callable[[], None] | None = None,
+    version: str = "",
 ) -> MenuBarApp:
     """Create and run the menu bar app.
 
@@ -175,19 +257,24 @@ def run_menubar_app(
         hotkey: Hotkey string to display in menu.
         on_quit: Callback when user quits from menu.
         on_hotkey_change: Callback when user changes hotkey (receives new hotkey string).
+        on_update: Callback when user triggers update from menu.
+        version: Current app version to display.
 
     Returns:
         MenuBarApp instance for updating state.
     """
-    app = NSApplication.sharedApplication()
+    _ = NSApplication.sharedApplication()  # Initialize app (return value unused)
 
     # Create delegate
-    delegate = MenuBarApp.alloc().initWithCallbacks_({
-        "on_quit": on_quit,
-        "on_hotkey_change": on_hotkey_change,
-    })
+    delegate = MenuBarApp.alloc().initWithCallbacks_(
+        {
+            "on_quit": on_quit,
+            "on_hotkey_change": on_hotkey_change,
+            "on_update": on_update,
+        }
+    )
     delegate.setHotkey_(hotkey)
-    delegate.setupStatusBar()
+    delegate.setupStatusBar(version=version)
 
     return delegate
 

@@ -9,6 +9,7 @@ dependencies = [
     "pyobjc-framework-Quartz>=10.0",
     "pyobjc-framework-ApplicationServices>=10.0",
     "numpy>=1.24.0",
+    "packaging>=21.0",
 ]
 
 [project.scripts]
@@ -18,6 +19,8 @@ hanasu = "hanasu.main:main"
 dev-dependencies = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
 ]
 
 [build-system]
@@ -28,3 +31,43 @@ build-backend = "hatchling.build"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_ignores = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "hanasu.menubar"
+disable_error_code = ["attr-defined", "assignment"]
+
+[[tool.mypy.overrides]]
+module = "hanasu.main"
+disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+module = "hanasu.config"
+disable_error_code = ["arg-type"]
