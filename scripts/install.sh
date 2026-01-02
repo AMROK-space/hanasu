@@ -113,6 +113,13 @@ chmod +x "$APP_PATH/Contents/MacOS/hanasu"
 
 echo "Created: $APP_PATH"
 
+# Create symlink for CLI access
+echo
+echo "Setting up command-line access..."
+mkdir -p "$HOME/.local/bin"
+ln -sf "$PROJECT_DIR/.venv/bin/hanasu" "$HOME/.local/bin/hanasu"
+echo "Created: $HOME/.local/bin/hanasu"
+
 echo
 echo "========================================="
 echo "Installation complete!"
@@ -128,4 +135,9 @@ echo
 echo "To restart after quitting:"
 echo "  - Search 'Hanasu' in Spotlight (Cmd+Space)"
 echo "  - Or open from /Applications"
+echo
+echo "CLI commands available:"
+echo "  hanasu run      - Start the app"
+echo "  hanasu update   - Update to latest version"
+echo "  hanasu status   - Show current status"
 echo "========================================="
