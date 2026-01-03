@@ -183,10 +183,30 @@ class HotkeyListener:
     def stop(self) -> None:
         """Stop listening for hotkey."""
         self._running = False
+
+        # Disable the event tap first
         if self._tap:
             Quartz.CGEventTapEnable(self._tap, False)
+
+        # Remove run loop source from run loop
+        if self._run_loop_source:
+            Quartz.CFRunLoopRemoveSource(
+                Quartz.CFRunLoopGetCurrent(),
+                self._run_loop_source,
+                Quartz.kCFRunLoopCommonModes,
+            )
+            self._run_loop_source = None
+
+        # Invalidate the mach port to fully release the event tap
+        if self._tap:
+            Quartz.CFMachPortInvalidate(self._tap)
+            self._tap = None
+
+        # Wait for thread to stop
         if self._thread:
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                print("[hanasu] Warning: hotkey thread did not stop cleanly")
             self._thread = None
 
     def _run_event_tap(self) -> None:

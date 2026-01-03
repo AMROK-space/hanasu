@@ -58,6 +58,39 @@ class Hanasu:
             print(f"[hanasu] Model: {self.config.model}")
             print(f"[hanasu] Audio device: {self.config.audio_device or 'system default'}")
 
+    def change_hotkey(self, new_hotkey: str) -> None:
+        """Change the hotkey while running (hot-reload).
+
+        Args:
+            new_hotkey: New hotkey string (e.g., "cmd+shift+space").
+
+        Raises:
+            HotkeyParseError: If the hotkey string is invalid.
+        """
+        # Stop old listener
+        self.hotkey_listener.stop()
+
+        # Create new listener (will raise HotkeyParseError if invalid)
+        self.hotkey_listener = HotkeyListener(
+            hotkey=new_hotkey,
+            on_press=self._on_hotkey_press,
+            on_release=self._on_hotkey_release,
+        )
+
+        # Update config
+        self.config.hotkey = new_hotkey
+        save_config(self.config, self.config_dir)
+
+        # Start new listener
+        self.hotkey_listener.start()
+
+        # Update menu bar display
+        if self._menubar_app:
+            self._menubar_app.setHotkey_(new_hotkey)
+
+        if self.config.debug:
+            print(f"[hanasu] Hotkey changed to: {new_hotkey}")
+
     def run(self) -> None:
         """Start the daemon and listen for hotkey."""
         print(f"Hanasu v{__version__} running...")

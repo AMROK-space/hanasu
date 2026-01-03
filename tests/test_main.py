@@ -180,3 +180,165 @@ class TestRunUpdate:
         with patch("hanasu.main.Path.home", return_value=tmp_path):
             with pytest.raises(FileNotFoundError, match="source"):
                 run_update()
+
+
+class TestChangeHotkey:
+    """Test hotkey hot-reload functionality."""
+
+    def test_change_hotkey_stops_old_listener(self, tmp_path: Path):
+        """Changing hotkey stops the existing listener."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener_class:
+                            mock_config.return_value = MagicMock(
+                                hotkey="ctrl+shift+space",
+                                model="small",
+                                language="en",
+                                audio_device=None,
+                                debug=False,
+                            )
+                            mock_dict.return_value = MagicMock(terms=[], replacements={})
+                            mock_old_listener = MagicMock()
+                            mock_listener_class.return_value = mock_old_listener
+
+                            app = Hanasu(config_dir=tmp_path)
+
+                            with patch("hanasu.main.save_config"):
+                                app.change_hotkey("cmd+alt+v")
+
+                            mock_old_listener.stop.assert_called_once()
+
+    def test_change_hotkey_creates_new_listener_with_new_hotkey(self, tmp_path: Path):
+        """Changing hotkey creates new listener with the new hotkey."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener_class:
+                            mock_config.return_value = MagicMock(
+                                hotkey="ctrl+shift+space",
+                                model="small",
+                                language="en",
+                                audio_device=None,
+                                debug=False,
+                            )
+                            mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                            app = Hanasu(config_dir=tmp_path)
+
+                            with patch("hanasu.main.save_config"):
+                                app.change_hotkey("cmd+alt+v")
+
+                            # Should have been called twice: once on init, once on change
+                            assert mock_listener_class.call_count == 2
+                            # Second call should have new hotkey
+                            second_call_kwargs = mock_listener_class.call_args_list[1]
+                            assert second_call_kwargs[1]["hotkey"] == "cmd+alt+v"
+
+    def test_change_hotkey_starts_new_listener(self, tmp_path: Path):
+        """Changing hotkey starts the new listener."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener_class:
+                            mock_config.return_value = MagicMock(
+                                hotkey="ctrl+shift+space",
+                                model="small",
+                                language="en",
+                                audio_device=None,
+                                debug=False,
+                            )
+                            mock_dict.return_value = MagicMock(terms=[], replacements={})
+                            mock_new_listener = MagicMock()
+                            # Return different mocks for first and second instantiation
+                            mock_listener_class.side_effect = [MagicMock(), mock_new_listener]
+
+                            app = Hanasu(config_dir=tmp_path)
+
+                            with patch("hanasu.main.save_config"):
+                                app.change_hotkey("cmd+alt+v")
+
+                            mock_new_listener.start.assert_called_once()
+
+    def test_change_hotkey_saves_config(self, tmp_path: Path):
+        """Changing hotkey persists to config file."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            mock_config_obj = MagicMock(
+                                hotkey="ctrl+shift+space",
+                                model="small",
+                                language="en",
+                                audio_device=None,
+                                debug=False,
+                            )
+                            mock_config.return_value = mock_config_obj
+                            mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                            app = Hanasu(config_dir=tmp_path)
+
+                            with patch("hanasu.main.save_config") as mock_save:
+                                app.change_hotkey("cmd+alt+v")
+
+                                mock_save.assert_called_once()
+                                # Verify config was updated before saving
+                                assert mock_config_obj.hotkey == "cmd+alt+v"
+
+    def test_change_hotkey_updates_menubar(self, tmp_path: Path):
+        """Changing hotkey updates menu bar display."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            mock_config.return_value = MagicMock(
+                                hotkey="ctrl+shift+space",
+                                model="small",
+                                language="en",
+                                audio_device=None,
+                                debug=False,
+                            )
+                            mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                            app = Hanasu(config_dir=tmp_path)
+                            mock_menubar = MagicMock()
+                            app._menubar_app = mock_menubar
+
+                            with patch("hanasu.main.save_config"):
+                                app.change_hotkey("cmd+alt+v")
+
+                            mock_menubar.setHotkey_.assert_called_once_with("cmd+alt+v")
+
+    def test_change_hotkey_with_invalid_hotkey_raises(self, tmp_path: Path):
+        """Invalid hotkey string raises HotkeyParseError."""
+        from hanasu.hotkey import HotkeyParseError
+
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener_class:
+                            mock_config.return_value = MagicMock(
+                                hotkey="ctrl+shift+space",
+                                model="small",
+                                language="en",
+                                audio_device=None,
+                                debug=False,
+                            )
+                            mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                            # First call (init) succeeds, second call (change) raises
+                            mock_listener_class.side_effect = [
+                                MagicMock(),  # Initial listener
+                                HotkeyParseError("Unknown key: invalid"),  # change_hotkey call
+                            ]
+
+                            app = Hanasu(config_dir=tmp_path)
+
+                            with pytest.raises(HotkeyParseError):
+                                app.change_hotkey("invalid+hotkey+combo")

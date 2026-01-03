@@ -1,9 +1,11 @@
 """macOS menu bar integration using PyObjC."""
 
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import objc
+import Quartz
 from AppKit import (
     NSAlert,
     NSApplication,
@@ -16,6 +18,8 @@ from AppKit import (
 )
 from Foundation import NSArray, NSDefaultRunLoopMode, NSObject
 from PyObjCTools import AppHelper
+
+from hanasu.hotkey import parse_hotkey
 
 if TYPE_CHECKING:
     from hanasu.updater import UpdateStatus
@@ -177,8 +181,10 @@ class MenuBarApp(NSObject):
         if response == 1000:
             new_hotkey = text_field.stringValue().strip()
             if new_hotkey and new_hotkey != self._hotkey_display:
-                if self._callbacks.get("on_hotkey_change"):
-                    self._callbacks["on_hotkey_change"](new_hotkey)
+                # Validate by having user press the new hotkey
+                if validate_hotkey(new_hotkey):
+                    if self._callbacks.get("on_hotkey_change"):
+                        self._callbacks["on_hotkey_change"](new_hotkey)
 
     def setUpdateStatus_(self, status: "UpdateStatus"):
         """Update the update status display (thread-safe).
@@ -242,6 +248,99 @@ class MenuBarApp(NSObject):
         if self._callbacks.get("on_quit"):
             self._callbacks["on_quit"]()
         NSApplication.sharedApplication().terminate_(None)
+
+
+def validate_hotkey(hotkey_str: str, timeout: float = 5.0) -> bool:
+    """Validate a hotkey by waiting for user to press it.
+
+    Creates a temporary event tap to listen for the specified hotkey.
+    Returns True if the user presses the correct combination within timeout.
+
+    Args:
+        hotkey_str: Hotkey string like "cmd+alt+v".
+        timeout: Seconds to wait for keypress (default 5.0).
+
+    Returns:
+        True if correct hotkey pressed within timeout, False otherwise.
+    """
+    try:
+        config = parse_hotkey(hotkey_str)
+    except Exception:
+        return False
+
+    result = {"validated": False, "done": False}
+    tap = None
+    run_loop_source = None
+
+    def event_callback(proxy, event_type, event, refcon):
+        if event_type == Quartz.kCGEventTapDisabledByTimeout:
+            if tap:
+                Quartz.CGEventTapEnable(tap, True)
+            return event
+
+        if event_type != Quartz.kCGEventKeyDown:
+            return event
+
+        keycode = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+        flags = Quartz.CGEventGetFlags(event)
+
+        # Mask to just modifier flags
+        modifier_only_flags = flags & (
+            Quartz.kCGEventFlagMaskCommand
+            | Quartz.kCGEventFlagMaskShift
+            | Quartz.kCGEventFlagMaskAlternate
+            | Quartz.kCGEventFlagMaskControl
+        )
+
+        if keycode == config["keycode"] and modifier_only_flags == config["modifier_mask"]:
+            result["validated"] = True
+            result["done"] = True
+        else:
+            # Wrong key pressed
+            result["done"] = True
+
+        return None  # Suppress the event
+
+    # Create event tap
+    mask = 1 << Quartz.kCGEventKeyDown
+    tap = Quartz.CGEventTapCreate(
+        Quartz.kCGSessionEventTap,
+        Quartz.kCGHeadInsertEventTap,
+        Quartz.kCGEventTapOptionDefault,
+        mask,
+        event_callback,
+        None,
+    )
+
+    if tap is None:
+        return False
+
+    # Create run loop source
+    run_loop_source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+    Quartz.CFRunLoopAddSource(
+        Quartz.CFRunLoopGetCurrent(),
+        run_loop_source,
+        Quartz.kCFRunLoopCommonModes,
+    )
+
+    # Enable tap
+    Quartz.CGEventTapEnable(tap, True)
+
+    # Poll for result or timeout
+    start = time.time()
+    while not result["done"] and (time.time() - start) < timeout:
+        Quartz.CFRunLoopRunInMode(Quartz.kCFRunLoopDefaultMode, 0.05, False)
+
+    # Cleanup
+    Quartz.CGEventTapEnable(tap, False)
+    Quartz.CFRunLoopRemoveSource(
+        Quartz.CFRunLoopGetCurrent(),
+        run_loop_source,
+        Quartz.kCFRunLoopCommonModes,
+    )
+    Quartz.CFMachPortInvalidate(tap)
+
+    return result["validated"]
 
 
 def run_menubar_app(
