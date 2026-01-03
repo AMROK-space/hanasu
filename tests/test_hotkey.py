@@ -142,3 +142,98 @@ class TestHotkeyListener:
             listener.stop()
 
             assert listener._running is False
+
+
+class TestHotkeyListenerCleanup:
+    """Test proper resource cleanup on stop."""
+
+    def test_stop_removes_run_loop_source(self):
+        """stop() removes run loop source from run loop."""
+        with patch("hanasu.hotkey.Quartz") as mock_quartz:
+            listener = HotkeyListener(
+                hotkey="cmd+v",
+                on_press=lambda: None,
+                on_release=lambda: None,
+            )
+            listener._running = True
+            listener._tap = MagicMock()
+            listener._run_loop_source = MagicMock()
+            listener._thread = None
+
+            listener.stop()
+
+            mock_quartz.CFRunLoopRemoveSource.assert_called_once()
+
+    def test_stop_invalidates_mach_port(self):
+        """stop() invalidates the mach port."""
+        with patch("hanasu.hotkey.Quartz") as mock_quartz:
+            listener = HotkeyListener(
+                hotkey="cmd+v",
+                on_press=lambda: None,
+                on_release=lambda: None,
+            )
+            listener._running = True
+            mock_tap = MagicMock()
+            listener._tap = mock_tap
+            listener._run_loop_source = MagicMock()
+            listener._thread = None
+
+            listener.stop()
+
+            mock_quartz.CFMachPortInvalidate.assert_called_once_with(mock_tap)
+
+    def test_stop_sets_tap_to_none_after_cleanup(self):
+        """stop() sets _tap to None after invalidating."""
+        with patch("hanasu.hotkey.Quartz"):
+            listener = HotkeyListener(
+                hotkey="cmd+v",
+                on_press=lambda: None,
+                on_release=lambda: None,
+            )
+            listener._running = True
+            listener._tap = MagicMock()
+            listener._run_loop_source = MagicMock()
+            listener._thread = None
+
+            listener.stop()
+
+            assert listener._tap is None
+
+    def test_stop_sets_run_loop_source_to_none_after_cleanup(self):
+        """stop() sets _run_loop_source to None after removing."""
+        with patch("hanasu.hotkey.Quartz"):
+            listener = HotkeyListener(
+                hotkey="cmd+v",
+                on_press=lambda: None,
+                on_release=lambda: None,
+            )
+            listener._running = True
+            listener._tap = MagicMock()
+            listener._run_loop_source = MagicMock()
+            listener._thread = None
+
+            listener.stop()
+
+            assert listener._run_loop_source is None
+
+    def test_stop_warns_if_thread_does_not_stop(self, capsys):
+        """stop() prints warning if thread doesn't stop within timeout."""
+        with patch("hanasu.hotkey.Quartz"):
+            listener = HotkeyListener(
+                hotkey="cmd+v",
+                on_press=lambda: None,
+                on_release=lambda: None,
+            )
+            listener._running = True
+            listener._tap = None
+            listener._run_loop_source = None
+
+            # Create a mock thread that is_alive() returns True (didn't stop)
+            mock_thread = MagicMock()
+            mock_thread.is_alive.return_value = True
+            listener._thread = mock_thread
+
+            listener.stop()
+
+            captured = capsys.readouterr()
+            assert "warning" in captured.out.lower() or "Warning" in captured.out
