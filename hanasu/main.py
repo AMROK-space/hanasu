@@ -508,6 +508,35 @@ def print_status(config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
         print("  No input devices found")
 
 
+def run_transcribe(audio_file: str, use_vtt: bool = False, use_large: bool = False) -> None:
+    """Transcribe an audio file to text or VTT format.
+
+    Args:
+        audio_file: Path to audio file to transcribe.
+        use_vtt: Output in VTT subtitle format with timestamps.
+        use_large: Use large model for better accuracy.
+    """
+    import mlx_whisper
+
+    from hanasu.transcriber import MODEL_PATHS
+
+    model = MODEL_PATHS["large"] if use_large else MODEL_PATHS["small"]
+    result = mlx_whisper.transcribe(audio_file, path_or_hf_repo=model)
+
+    if use_vtt:
+        print("WEBVTT\n")
+        for seg in result["segments"]:
+            start = seg["start"]
+            end = seg["end"]
+            sh, sm, ss = int(start // 3600), int((start % 3600) // 60), start % 60
+            eh, em, es = int(end // 3600), int((end % 3600) // 60), end % 60
+            print(f"{sh:02d}:{sm:02d}:{ss:06.3f} --> {eh:02d}:{em:02d}:{es:06.3f}")
+            print(seg["text"].strip())
+            print()
+    else:
+        print(result["text"])
+
+
 def main() -> None:
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
@@ -530,11 +559,23 @@ def main() -> None:
         default=DEFAULT_CONFIG_DIR,
         help=f"Config directory (default: {DEFAULT_CONFIG_DIR})",
     )
-    parser.add_argument(
-        "command",
-        nargs="?",
-        choices=["setup", "update"],
-        help="Command to run (setup for first-time setup, update to update)",
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    # setup command
+    subparsers.add_parser("setup", help="Run first-time setup")
+
+    # update command
+    subparsers.add_parser("update", help="Update to latest version")
+
+    # transcribe command
+    transcribe_parser = subparsers.add_parser("transcribe", help="Transcribe an audio file to text")
+    transcribe_parser.add_argument("audio_file", help="Path to audio file")
+    transcribe_parser.add_argument(
+        "--vtt", action="store_true", help="Output in VTT subtitle format"
+    )
+    transcribe_parser.add_argument(
+        "--large", action="store_true", help="Use large model for better accuracy"
     )
 
     args = parser.parse_args()
@@ -547,6 +588,8 @@ def main() -> None:
         except (FileNotFoundError, RuntimeError) as e:
             print(f"Error: {e}")
             sys.exit(1)
+    elif args.command == "transcribe":
+        run_transcribe(args.audio_file, use_vtt=args.vtt, use_large=args.large)
     elif args.status:
         print_status(args.config_dir)
     else:
