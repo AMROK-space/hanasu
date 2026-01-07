@@ -7,8 +7,11 @@ import pytest
 
 from hanasu.main import (
     Hanasu,
+    extract_audio_from_video,
     get_status,
+    is_video_file,
     run_setup,
+    run_transcribe,
     run_update,
 )
 
@@ -342,3 +345,215 @@ class TestChangeHotkey:
 
                             with pytest.raises(HotkeyParseError):
                                 app.change_hotkey("invalid+hotkey+combo")
+
+
+class TestIsVideoFile:
+    """Test video file detection."""
+
+    def test_returns_true_for_mp4(self):
+        """MP4 files are detected as video."""
+        assert is_video_file("recording.mp4") is True
+
+    def test_returns_true_for_mov(self):
+        """MOV files are detected as video."""
+        assert is_video_file("recording.mov") is True
+
+    def test_returns_true_for_mkv(self):
+        """MKV files are detected as video."""
+        assert is_video_file("recording.mkv") is True
+
+    def test_returns_true_for_other_video_formats(self):
+        """Other common video formats are detected."""
+        assert is_video_file("video.avi") is True
+        assert is_video_file("video.webm") is True
+        assert is_video_file("video.m4v") is True
+        assert is_video_file("video.flv") is True
+        assert is_video_file("video.wmv") is True
+
+    def test_returns_false_for_audio_files(self):
+        """Audio files are not detected as video."""
+        assert is_video_file("audio.mp3") is False
+        assert is_video_file("audio.wav") is False
+        assert is_video_file("audio.m4a") is False
+        assert is_video_file("audio.flac") is False
+
+    def test_case_insensitive_detection(self):
+        """Extension detection is case-insensitive."""
+        assert is_video_file("VIDEO.MP4") is True
+        assert is_video_file("video.Mp4") is True
+        assert is_video_file("video.MOV") is True
+
+    def test_handles_path_objects(self):
+        """Works with Path objects, not just strings."""
+        assert is_video_file(Path("/path/to/video.mp4")) is True
+        assert is_video_file(Path("/path/to/audio.wav")) is False
+
+
+class TestExtractAudioFromVideo:
+    """Test audio extraction from video files."""
+
+    def test_calls_ffmpeg_with_correct_arguments(self, tmp_path: Path):
+        """ffmpeg is called with correct extraction arguments."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with patch("hanasu.main.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
+
+            result = extract_audio_from_video(str(video_file))
+
+            # Verify ffmpeg was called
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+
+            # Check key arguments
+            assert call_args[0] == "ffmpeg"
+            assert "-i" in call_args
+            assert str(video_file) in call_args
+            assert "-vn" in call_args  # No video
+            assert "-acodec" in call_args
+            assert "pcm_s16le" in call_args  # WAV codec
+            assert "-ar" in call_args
+            assert "16000" in call_args  # 16kHz sample rate
+            assert "-ac" in call_args
+            assert "1" in call_args  # Mono
+            assert "-y" in call_args  # Overwrite
+
+            # Clean up temp file
+            if Path(result).exists():
+                Path(result).unlink()
+
+    def test_returns_temp_wav_path(self, tmp_path: Path):
+        """Returns path to temporary WAV file."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with patch("hanasu.main.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
+
+            result = extract_audio_from_video(str(video_file))
+
+            assert result.endswith(".wav")
+
+            # Clean up temp file
+            if Path(result).exists():
+                Path(result).unlink()
+
+    def test_raises_error_on_ffmpeg_failure(self, tmp_path: Path):
+        """Raises RuntimeError when ffmpeg fails."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with patch("hanasu.main.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stderr="Error: No audio stream found")
+
+            with pytest.raises(RuntimeError, match="(?i)ffmpeg|audio"):
+                extract_audio_from_video(str(video_file))
+
+    def test_raises_error_when_ffmpeg_not_installed(self, tmp_path: Path):
+        """Raises helpful error when ffmpeg is not installed."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with patch("hanasu.main.subprocess.run") as mock_run:
+            mock_run.side_effect = FileNotFoundError("ffmpeg not found")
+
+            with pytest.raises(RuntimeError, match="(?i)ffmpeg.*install"):
+                extract_audio_from_video(str(video_file))
+
+
+class TestRunTranscribeVideo:
+    """Test video transcription integration."""
+
+    def test_transcribes_video_file(self, tmp_path: Path, capsys):
+        """Video file is extracted and transcribed."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with patch("hanasu.main.is_video_file", return_value=True):
+            with patch("hanasu.main.extract_audio_from_video") as mock_extract:
+                with patch("mlx_whisper.transcribe") as mock_transcribe:
+                    temp_audio = tmp_path / "temp.wav"
+                    temp_audio.touch()
+                    mock_extract.return_value = str(temp_audio)
+                    mock_transcribe.return_value = {
+                        "text": "Hello from video",
+                        "segments": [],
+                    }
+
+                    run_transcribe(str(video_file))
+
+                    # Verify extraction was called
+                    mock_extract.assert_called_once_with(str(video_file))
+
+                    # Verify transcription was called with extracted audio
+                    mock_transcribe.assert_called_once()
+                    call_args = mock_transcribe.call_args[0]
+                    assert str(temp_audio) in call_args
+
+                    # Verify output
+                    captured = capsys.readouterr()
+                    assert "Hello from video" in captured.out
+
+    def test_cleans_up_temp_file_after_transcription(self, tmp_path: Path):
+        """Temporary audio file is deleted after successful transcription."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+        temp_audio = tmp_path / "temp.wav"
+        temp_audio.touch()
+
+        with patch("hanasu.main.is_video_file", return_value=True):
+            with patch("hanasu.main.extract_audio_from_video") as mock_extract:
+                with patch("mlx_whisper.transcribe") as mock_transcribe:
+                    mock_extract.return_value = str(temp_audio)
+                    mock_transcribe.return_value = {
+                        "text": "Hello",
+                        "segments": [],
+                    }
+
+                    run_transcribe(str(video_file))
+
+                    # Temp file should be cleaned up
+                    assert not temp_audio.exists()
+
+    def test_cleans_up_temp_file_on_error(self, tmp_path: Path):
+        """Temporary audio file is deleted even when transcription fails."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+        temp_audio = tmp_path / "temp.wav"
+        temp_audio.touch()
+
+        with patch("hanasu.main.is_video_file", return_value=True):
+            with patch("hanasu.main.extract_audio_from_video") as mock_extract:
+                with patch("mlx_whisper.transcribe") as mock_transcribe:
+                    mock_extract.return_value = str(temp_audio)
+                    mock_transcribe.side_effect = Exception("Transcription failed")
+
+                    with pytest.raises(Exception, match="Transcription failed"):
+                        run_transcribe(str(video_file))
+
+                    # Temp file should still be cleaned up
+                    assert not temp_audio.exists()
+
+    def test_audio_files_transcribed_directly(self, tmp_path: Path, capsys):
+        """Audio files bypass extraction and are transcribed directly."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("hanasu.main.extract_audio_from_video") as mock_extract:
+                with patch("mlx_whisper.transcribe") as mock_transcribe:
+                    mock_transcribe.return_value = {
+                        "text": "Hello from audio",
+                        "segments": [],
+                    }
+
+                    run_transcribe(str(audio_file))
+
+                    # Extraction should NOT be called for audio files
+                    mock_extract.assert_not_called()
+
+                    # Transcription should be called with original file
+                    mock_transcribe.assert_called_once()
+                    call_args = mock_transcribe.call_args[0]
+                    assert str(audio_file) in call_args

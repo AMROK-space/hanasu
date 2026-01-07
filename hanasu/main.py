@@ -558,6 +558,7 @@ def run_doctor() -> None:
         print(f"  ✓ Install manifest: {manifest_file}")
         try:
             import json
+
             with open(manifest_file) as f:
                 manifest = json.load(f)
             print(f"    Installed: {manifest.get('installed_at', 'unknown')}")
@@ -591,6 +592,7 @@ def run_doctor() -> None:
         # Check what it points to
         try:
             import subprocess
+
             result = subprocess.run(
                 ["plutil", "-extract", "ProgramArguments.0", "raw", str(plist_path)],
                 capture_output=True,
@@ -687,14 +689,85 @@ def run_doctor() -> None:
     elif issues:
         print()
         print("To fix, try reinstalling:")
-        print("  curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash")
+        print(
+            "  curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
+        )
+
+
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
+
+
+def is_video_file(file_path: str | Path) -> bool:
+    """Check if a file is a video file based on extension.
+
+    Args:
+        file_path: Path to the file.
+
+    Returns:
+        True if file is a video file, False otherwise.
+    """
+    return Path(file_path).suffix.lower() in VIDEO_EXTENSIONS
+
+
+def extract_audio_from_video(video_path: str) -> str:
+    """Extract audio from a video file to a temporary WAV file.
+
+    Args:
+        video_path: Path to video file.
+
+    Returns:
+        Path to temporary WAV file.
+
+    Raises:
+        RuntimeError: If ffmpeg fails or is not installed.
+    """
+    import tempfile
+
+    # Create temp file for extracted audio
+    temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    temp_path = temp_file.name
+    temp_file.close()
+
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-i",
+                video_path,
+                "-vn",  # No video
+                "-acodec",
+                "pcm_s16le",  # WAV codec
+                "-ar",
+                "16000",  # 16kHz sample rate (whisper input)
+                "-ac",
+                "1",  # Mono
+                "-y",  # Overwrite
+                temp_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        # Clean up temp file before raising
+        Path(temp_path).unlink()
+        raise RuntimeError(
+            "ffmpeg not found. Please install ffmpeg to transcribe video files.\n"
+            "Install with: brew install ffmpeg"
+        )
+
+    if result.returncode != 0:
+        # Clean up temp file before raising
+        Path(temp_path).unlink()
+        raise RuntimeError(f"ffmpeg failed to extract audio: {result.stderr}")
+
+    return temp_path
 
 
 def run_transcribe(audio_file: str, use_vtt: bool = False, use_large: bool = False) -> None:
-    """Transcribe an audio file to text or VTT format.
+    """Transcribe an audio or video file to text or VTT format.
 
     Args:
-        audio_file: Path to audio file to transcribe.
+        audio_file: Path to audio or video file to transcribe.
         use_vtt: Output in VTT subtitle format with timestamps.
         use_large: Use large model for better accuracy.
     """
@@ -703,20 +776,34 @@ def run_transcribe(audio_file: str, use_vtt: bool = False, use_large: bool = Fal
     from hanasu.transcriber import MODEL_PATHS
 
     model = MODEL_PATHS["large"] if use_large else MODEL_PATHS["small"]
-    result = mlx_whisper.transcribe(audio_file, path_or_hf_repo=model)
 
-    if use_vtt:
-        print("WEBVTT\n")
-        for seg in result["segments"]:
-            start = seg["start"]
-            end = seg["end"]
-            sh, sm, ss = int(start // 3600), int((start % 3600) // 60), start % 60
-            eh, em, es = int(end // 3600), int((end % 3600) // 60), end % 60
-            print(f"{sh:02d}:{sm:02d}:{ss:06.3f} --> {eh:02d}:{em:02d}:{es:06.3f}")
-            print(seg["text"].strip())
-            print()
+    # Check if input is a video file
+    temp_audio_path = None
+    if is_video_file(audio_file):
+        temp_audio_path = extract_audio_from_video(audio_file)
+        transcribe_path = temp_audio_path
     else:
-        print(result["text"])
+        transcribe_path = audio_file
+
+    try:
+        result = mlx_whisper.transcribe(transcribe_path, path_or_hf_repo=model)
+
+        if use_vtt:
+            print("WEBVTT\n")
+            for seg in result["segments"]:
+                start = seg["start"]
+                end = seg["end"]
+                sh, sm, ss = int(start // 3600), int((start % 3600) // 60), start % 60
+                eh, em, es = int(end // 3600), int((end % 3600) // 60), end % 60
+                print(f"{sh:02d}:{sm:02d}:{ss:06.3f} --> {eh:02d}:{em:02d}:{es:06.3f}")
+                print(seg["text"].strip())
+                print()
+        else:
+            print(result["text"])
+    finally:
+        # Clean up temp file if we created one
+        if temp_audio_path and Path(temp_audio_path).exists():
+            Path(temp_audio_path).unlink()
 
 
 def main() -> None:
