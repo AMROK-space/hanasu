@@ -1,6 +1,6 @@
 [project]
 name = "hanasu"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local voice-to-text dictation for macOS. By AMROK."
 requires-python = ">=3.11"
 dependencies = [
