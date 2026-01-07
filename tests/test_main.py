@@ -9,6 +9,7 @@ from hanasu.main import (
     Hanasu,
     extract_audio_from_video,
     get_status,
+    is_model_cached,
     is_video_file,
     run_setup,
     run_transcribe,
@@ -557,3 +558,55 @@ class TestRunTranscribeVideo:
                     mock_transcribe.assert_called_once()
                     call_args = mock_transcribe.call_args[0]
                     assert str(audio_file) in call_args
+
+
+class TestIsModelCached:
+    """Test model cache detection."""
+
+    def test_returns_true_when_cache_directory_exists(self, tmp_path: Path):
+        """Returns True when model cache directory exists."""
+        # Create mock cache structure
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        model_cache = cache_dir / "models--mlx-community--whisper-small-mlx"
+        model_cache.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("small")
+
+        assert result is True
+
+    def test_returns_false_when_cache_directory_missing(self, tmp_path: Path):
+        """Returns False when model cache directory does not exist."""
+        # Create cache base but not the model directory
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("medium")
+
+        assert result is False
+
+    def test_constructs_correct_cache_path_for_each_model(self, tmp_path: Path):
+        """Constructs the correct HuggingFace cache path for each model size."""
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir.mkdir(parents=True)
+
+        # Test that large model uses v3 suffix
+        large_cache = cache_dir / "models--mlx-community--whisper-large-v3-mlx"
+        large_cache.mkdir()
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("large")
+
+        assert result is True
+
+    def test_defaults_to_small_for_unknown_model(self, tmp_path: Path):
+        """Falls back to small model path for unknown model names."""
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        small_cache = cache_dir / "models--mlx-community--whisper-small-mlx"
+        small_cache.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("nonexistent-model")
+
+        assert result is True

@@ -328,6 +328,23 @@ def download_model(model: str = "small") -> None:
         print("Model files should be cached for future use.")
 
 
+def is_model_cached(model: str) -> bool:
+    """Check if a whisper model is cached locally.
+
+    Args:
+        model: Model size (tiny, base, small, medium, large).
+
+    Returns:
+        True if model is cached, False otherwise.
+    """
+    from hanasu.transcriber import MODEL_PATHS
+
+    model_path = MODEL_PATHS.get(model, MODEL_PATHS["small"])
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cache_name = f"models--{model_path.replace('/', '--')}"
+    return (cache_dir / model_cache_name).exists()
+
+
 def run_update() -> None:
     """Update Hanasu to the latest version.
 
