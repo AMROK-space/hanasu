@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import threading
+import typing
 from pathlib import Path
 
 from hanasu import __version__
@@ -867,13 +868,19 @@ def extract_audio_from_video(video_path: str) -> str:
     return temp_path
 
 
-def run_transcribe(audio_file: str, use_vtt: bool = False, use_large: bool = False) -> None:
+def run_transcribe(
+    audio_file: str,
+    use_vtt: bool = False,
+    use_large: bool = False,
+    output_file: str | None = None,
+) -> None:
     """Transcribe an audio or video file to text or VTT format.
 
     Args:
         audio_file: Path to audio or video file to transcribe.
         use_vtt: Output in VTT subtitle format with timestamps.
         use_large: Use large model for better accuracy.
+        output_file: Path to write output to. If None, writes to stdout.
     """
     import mlx_whisper
 
@@ -892,18 +899,25 @@ def run_transcribe(audio_file: str, use_vtt: bool = False, use_large: bool = Fal
     try:
         result = mlx_whisper.transcribe(transcribe_path, path_or_hf_repo=model)
 
-        if use_vtt:
-            print("WEBVTT\n")
-            for seg in result["segments"]:
-                start = seg["start"]
-                end = seg["end"]
-                sh, sm, ss = int(start // 3600), int((start % 3600) // 60), start % 60
-                eh, em, es = int(end // 3600), int((end % 3600) // 60), end % 60
-                print(f"{sh:02d}:{sm:02d}:{ss:06.3f} --> {eh:02d}:{em:02d}:{es:06.3f}")
-                print(seg["text"].strip())
-                print()
+        def write_output(out: typing.TextIO) -> None:
+            if use_vtt:
+                out.write("WEBVTT\n\n")
+                for seg in result["segments"]:
+                    start = seg["start"]
+                    end = seg["end"]
+                    sh, sm, ss = int(start // 3600), int((start % 3600) // 60), start % 60
+                    eh, em, es = int(end // 3600), int((end % 3600) // 60), end % 60
+                    out.write(f"{sh:02d}:{sm:02d}:{ss:06.3f} --> {eh:02d}:{em:02d}:{es:06.3f}\n")
+                    out.write(seg["text"].strip() + "\n")
+                    out.write("\n")
+            else:
+                out.write(result["text"] + "\n")
+
+        if output_file:
+            with open(output_file, "w") as f:
+                write_output(f)
         else:
-            print(result["text"])
+            write_output(sys.stdout)
     finally:
         # Clean up temp file if we created one
         if temp_audio_path and Path(temp_audio_path).exists():
@@ -953,6 +967,13 @@ def main() -> None:
     transcribe_parser.add_argument(
         "--large", action="store_true", help="Use large model for better accuracy"
     )
+    transcribe_parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        metavar="FILE",
+        help="Write output to FILE instead of stdout",
+    )
 
     args = parser.parse_args()
 
@@ -967,7 +988,12 @@ def main() -> None:
     elif args.command == "doctor":
         run_doctor()
     elif args.command == "transcribe":
-        run_transcribe(args.audio_file, use_vtt=args.vtt, use_large=args.large)
+        run_transcribe(
+            args.audio_file,
+            use_vtt=args.vtt,
+            use_large=args.large,
+            output_file=args.output,
+        )
     elif args.status:
         print_status(args.config_dir)
     else:
