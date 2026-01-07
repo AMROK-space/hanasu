@@ -12,11 +12,13 @@ from AppKit import (
     NSMenu,
     NSMenuItem,
     NSModalPanelRunLoopMode,
+    NSOpenPanel,
+    NSSavePanel,
     NSStatusBar,
     NSTextField,
     NSVariableStatusItemLength,
 )
-from Foundation import NSArray, NSDefaultRunLoopMode, NSObject
+from Foundation import NSURL, NSArray, NSDefaultRunLoopMode, NSObject
 from PyObjCTools import AppHelper
 
 from hanasu.hotkey import parse_hotkey
@@ -77,6 +79,13 @@ class MenuBarApp(NSObject):
         )
         change_hotkey_item.setTarget_(self)
         menu.addItem_(change_hotkey_item)
+
+        # Transcribe File item
+        transcribe_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Transcribe File...", "transcribeFile:", ""
+        )
+        transcribe_item.setTarget_(self)
+        menu.addItem_(transcribe_item)
 
         # Separator
         menu.addItem_(NSMenuItem.separatorItem())
@@ -243,6 +252,11 @@ class MenuBarApp(NSObject):
         if self._callbacks.get("on_update"):
             self._callbacks["on_update"]()
 
+    def transcribeFile_(self, sender):
+        """Handle transcribe file menu item."""
+        if self._callbacks.get("on_transcribe_file"):
+            self._callbacks["on_transcribe_file"]()
+
     def quit_(self, sender):
         """Handle quit menu item."""
         if self._callbacks.get("on_quit"):
@@ -348,6 +362,7 @@ def run_menubar_app(
     on_quit: Callable[[], None] | None = None,
     on_hotkey_change: Callable[[str], None] | None = None,
     on_update: Callable[[], None] | None = None,
+    on_transcribe_file: Callable[[], None] | None = None,
     version: str = "",
 ) -> MenuBarApp:
     """Create and run the menu bar app.
@@ -357,6 +372,7 @@ def run_menubar_app(
         on_quit: Callback when user quits from menu.
         on_hotkey_change: Callback when user changes hotkey (receives new hotkey string).
         on_update: Callback when user triggers update from menu.
+        on_transcribe_file: Callback when user selects transcribe file from menu.
         version: Current app version to display.
 
     Returns:
@@ -370,6 +386,7 @@ def run_menubar_app(
             "on_quit": on_quit,
             "on_hotkey_change": on_hotkey_change,
             "on_update": on_update,
+            "on_transcribe_file": on_transcribe_file,
         }
     )
     delegate.setHotkey_(hotkey)
@@ -386,3 +403,75 @@ def start_app_loop():
 def stop_app_loop():
     """Stop the NSApplication event loop."""
     AppHelper.stopEventLoop()
+
+
+def open_file_picker(allowed_extensions: list[str] | None = None) -> str | None:
+    """Open file picker dialog and return selected path.
+
+    Args:
+        allowed_extensions: List of allowed file extensions (e.g., ["mp3", "wav"]).
+
+    Returns:
+        Selected file path as string, or None if cancelled.
+    """
+    panel = NSOpenPanel.openPanel()
+    panel.setCanChooseFiles_(True)
+    panel.setCanChooseDirectories_(False)
+    panel.setAllowsMultipleSelection_(False)
+
+    if allowed_extensions:
+        panel.setAllowedFileTypes_(allowed_extensions)
+
+    if panel.runModal() == 1:  # NSModalResponseOK
+        return str(panel.URL().path())
+    return None
+
+
+def show_format_picker() -> str | None:
+    """Show format selection dialog.
+
+    Returns:
+        'txt' for Plain Text, 'vtt' for VTT subtitles, or None if cancelled.
+    """
+    alert = NSAlert.alloc().init()
+    alert.setMessageText_("Select Output Format")
+    alert.setInformativeText_("Choose the format for the transcription:")
+    alert.addButtonWithTitle_("Plain Text (.txt)")
+    alert.addButtonWithTitle_("VTT Subtitles (.vtt)")
+    alert.addButtonWithTitle_("Cancel")
+
+    response = alert.runModal()
+    if response == 1000:  # First button
+        return "txt"
+    elif response == 1001:  # Second button
+        return "vtt"
+    return None
+
+
+def save_file_picker(
+    suggested_name: str = "transcription",
+    initial_dir: str | None = None,
+    file_types: list[str] | None = None,
+) -> str | None:
+    """Open save dialog and return selected path.
+
+    Args:
+        suggested_name: Default filename to suggest.
+        initial_dir: Initial directory to open dialog in.
+        file_types: List of allowed file extensions.
+
+    Returns:
+        Selected file path as string, or None if cancelled.
+    """
+    panel = NSSavePanel.savePanel()
+    panel.setNameFieldStringValue_(suggested_name)
+
+    if initial_dir:
+        panel.setDirectoryURL_(NSURL.fileURLWithPath_(initial_dir))
+
+    if file_types:
+        panel.setAllowedFileTypes_(file_types)
+
+    if panel.runModal() == 1:  # NSModalResponseOK
+        return str(panel.URL().path())
+    return None

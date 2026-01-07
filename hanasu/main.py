@@ -17,7 +17,13 @@ from hanasu.config import (
 )
 from hanasu.hotkey import HotkeyListener
 from hanasu.injector import inject_text
-from hanasu.menubar import run_menubar_app, start_app_loop
+from hanasu.menubar import (
+    open_file_picker,
+    run_menubar_app,
+    save_file_picker,
+    show_format_picker,
+    start_app_loop,
+)
 from hanasu.recorder import Recorder, list_input_devices
 from hanasu.transcriber import Transcriber
 from hanasu.updater import check_for_update
@@ -103,6 +109,7 @@ class Hanasu:
             on_quit=self._on_quit,
             on_hotkey_change=self._on_hotkey_change,
             on_update=self._on_update,
+            on_transcribe_file=self._on_transcribe_file,
             version=__version__,
         )
 
@@ -217,6 +224,7 @@ class Hanasu:
             audio_device=self.config.audio_device,
             debug=self.config.debug,
             clear_clipboard=self.config.clear_clipboard,
+            last_output_dir=self.config.last_output_dir,
         )
 
         # Save to file
@@ -284,6 +292,107 @@ class Hanasu:
 
         if text:
             inject_text(text, clear_after=self.config.clear_clipboard)
+
+    def _on_transcribe_file(self) -> None:
+        """Handle file transcription request from menu."""
+        # Audio/video extensions
+        extensions = ["mp3", "wav", "m4a", "mp4", "mov", "mkv", "avi", "webm"]
+
+        # Step 1: Select input file
+        input_path = open_file_picker(allowed_extensions=extensions)
+        if not input_path:
+            return
+
+        # Step 2: Select output format
+        fmt = show_format_picker()
+        if not fmt:
+            return
+
+        # Step 3: Select output location
+        input_name = Path(input_path).stem
+        suggested_name = f"{input_name}.{fmt}"
+        output_path = save_file_picker(
+            suggested_name=suggested_name,
+            initial_dir=self.config.last_output_dir,
+            file_types=[fmt],
+        )
+        if not output_path:
+            return
+
+        # Step 4: Update last output dir
+        self.config.last_output_dir = str(Path(output_path).parent)
+        save_config(self.config, self.config_dir)
+
+        # Step 5: Run transcription in background
+        threading.Thread(
+            target=self._run_file_transcription,
+            args=(input_path, output_path, fmt == "vtt"),
+            daemon=True,
+        ).start()
+
+    def _run_file_transcription(self, input_path: str, output_path: str, use_vtt: bool) -> None:
+        """Run file transcription in background thread.
+
+        Args:
+            input_path: Path to audio/video file.
+            output_path: Path for output file.
+            use_vtt: True to output VTT format, False for plain text.
+        """
+        import mlx_whisper
+
+        from hanasu.transcriber import MODEL_PATHS
+
+        model = MODEL_PATHS[self.config.model]
+
+        # Handle video files
+        temp_audio_path = None
+        try:
+            if is_video_file(input_path):
+                temp_audio_path = extract_audio_from_video(input_path)
+                transcribe_path = temp_audio_path
+            else:
+                transcribe_path = input_path
+
+            result = mlx_whisper.transcribe(transcribe_path, path_or_hf_repo=model)
+
+            with open(output_path, "w") as f:
+                if use_vtt:
+                    f.write("WEBVTT\n\n")
+                    for seg in result["segments"]:
+                        start = seg["start"]
+                        end = seg["end"]
+                        sh, sm, ss = int(start // 3600), int((start % 3600) // 60), start % 60
+                        eh, em, es = int(end // 3600), int((end % 3600) // 60), end % 60
+                        f.write(f"{sh:02d}:{sm:02d}:{ss:06.3f} --> {eh:02d}:{em:02d}:{es:06.3f}\n")
+                        f.write(f"{seg['text'].strip()}\n\n")
+                else:
+                    f.write(result["text"])
+
+        except Exception as e:
+            # Show error dialog on main thread
+            self._show_transcription_error(str(e))
+        finally:
+            if temp_audio_path and Path(temp_audio_path).exists():
+                Path(temp_audio_path).unlink()
+
+    def _show_transcription_error(self, message: str) -> None:
+        """Show error dialog on main thread.
+
+        Args:
+            message: Error message to display.
+        """
+        from AppKit import NSAlert
+        from PyObjCTools import AppHelper
+
+        def show_alert():
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Transcription Failed")
+            alert.setInformativeText_(message)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+
+        # Schedule on main thread
+        AppHelper.callAfter(show_alert)
 
 
 def download_model(model: str = "small") -> None:
@@ -753,7 +862,7 @@ def extract_audio_from_video(video_path: str) -> str:
         raise RuntimeError(
             "ffmpeg not found. Please install ffmpeg to transcribe video files.\n"
             "Install with: brew install ffmpeg"
-        )
+        ) from None
 
     if result.returncode != 0:
         # Clean up temp file before raising

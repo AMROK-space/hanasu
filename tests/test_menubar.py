@@ -302,3 +302,258 @@ class TestHotkeyValidation:
 
                         # Callback should NOT be called
                         callback.assert_not_called()
+
+
+class TestOpenFilePicker:
+    """Test file picker dialog for selecting audio/video files."""
+
+    def test_open_file_picker_returns_path_when_user_selects(self):
+        """open_file_picker returns selected file path when user confirms."""
+        from hanasu.menubar import open_file_picker
+
+        with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.openPanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 1  # NSModalResponseOK
+
+            mock_url = MagicMock()
+            mock_url.path.return_value = "/Users/test/audio.mp3"
+            mock_panel.URL.return_value = mock_url
+
+            result = open_file_picker()
+
+            assert result == "/Users/test/audio.mp3"
+
+    def test_open_file_picker_returns_none_when_user_cancels(self):
+        """open_file_picker returns None when user cancels dialog."""
+        from hanasu.menubar import open_file_picker
+
+        with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.openPanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 0  # NSModalResponseCancel
+
+            result = open_file_picker()
+
+            assert result is None
+
+    def test_open_file_picker_sets_allowed_extensions(self):
+        """open_file_picker filters to specified file types."""
+        from hanasu.menubar import open_file_picker
+
+        with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.openPanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 0
+
+            open_file_picker(allowed_extensions=["mp3", "wav", "mp4"])
+
+            mock_panel.setAllowedFileTypes_.assert_called_once_with(["mp3", "wav", "mp4"])
+
+    def test_open_file_picker_configures_panel_correctly(self):
+        """open_file_picker sets panel to select files not directories."""
+        from hanasu.menubar import open_file_picker
+
+        with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.openPanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 0
+
+            open_file_picker()
+
+            mock_panel.setCanChooseFiles_.assert_called_once_with(True)
+            mock_panel.setCanChooseDirectories_.assert_called_once_with(False)
+            mock_panel.setAllowsMultipleSelection_.assert_called_once_with(False)
+
+
+class TestSaveFilePicker:
+    """Test save file dialog for selecting output location."""
+
+    def test_save_file_picker_returns_path_when_user_confirms(self):
+        """save_file_picker returns selected file path when user confirms."""
+        from hanasu.menubar import save_file_picker
+
+        with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.savePanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 1  # NSModalResponseOK
+
+            mock_url = MagicMock()
+            mock_url.path.return_value = "/Users/test/output.txt"
+            mock_panel.URL.return_value = mock_url
+
+            result = save_file_picker()
+
+            assert result == "/Users/test/output.txt"
+
+    def test_save_file_picker_returns_none_when_user_cancels(self):
+        """save_file_picker returns None when user cancels dialog."""
+        from hanasu.menubar import save_file_picker
+
+        with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.savePanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 0  # NSModalResponseCancel
+
+            result = save_file_picker()
+
+            assert result is None
+
+    def test_save_file_picker_sets_suggested_filename(self):
+        """save_file_picker sets the default filename suggestion."""
+        from hanasu.menubar import save_file_picker
+
+        with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.savePanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 0
+
+            save_file_picker(suggested_name="transcription.txt")
+
+            mock_panel.setNameFieldStringValue_.assert_called_once_with("transcription.txt")
+
+    def test_save_file_picker_sets_initial_directory(self):
+        """save_file_picker sets the initial directory when provided."""
+        from hanasu.menubar import save_file_picker
+
+        with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
+            with patch("hanasu.menubar.NSURL") as mock_nsurl:
+                mock_panel = MagicMock()
+                mock_panel_class.savePanel.return_value = mock_panel
+                mock_panel.runModal.return_value = 0
+
+                mock_url = MagicMock()
+                mock_nsurl.fileURLWithPath_.return_value = mock_url
+
+                save_file_picker(initial_dir="/Users/test/documents")
+
+                mock_nsurl.fileURLWithPath_.assert_called_once_with("/Users/test/documents")
+                mock_panel.setDirectoryURL_.assert_called_once_with(mock_url)
+
+    def test_save_file_picker_sets_allowed_file_types(self):
+        """save_file_picker filters to specified file types."""
+        from hanasu.menubar import save_file_picker
+
+        with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
+            mock_panel = MagicMock()
+            mock_panel_class.savePanel.return_value = mock_panel
+            mock_panel.runModal.return_value = 0
+
+            save_file_picker(file_types=["txt", "vtt"])
+
+            mock_panel.setAllowedFileTypes_.assert_called_once_with(["txt", "vtt"])
+
+
+class TestTranscribeFileMenuItem:
+    """Test Transcribe File menu item."""
+
+    def test_run_menubar_app_accepts_on_transcribe_file_callback(self):
+        """run_menubar_app accepts on_transcribe_file callback parameter."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                transcribe_callback = MagicMock()
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    on_transcribe_file=transcribe_callback,
+                )
+
+                assert delegate is not None
+
+    def test_menubar_stores_transcribe_file_callback(self):
+        """MenuBarApp stores on_transcribe_file callback for later invocation."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                transcribe_callback = MagicMock()
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    on_transcribe_file=transcribe_callback,
+                )
+
+                assert delegate._callbacks.get("on_transcribe_file") == transcribe_callback
+
+    def test_transcribe_file_handler_invokes_callback(self):
+        """transcribeFile_ handler invokes the on_transcribe_file callback."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            callback = MagicMock()
+            delegate = MenuBarApp.alloc().initWithCallbacks_({"on_transcribe_file": callback})
+            delegate._status_item = MagicMock()
+
+            delegate.transcribeFile_(None)
+
+            callback.assert_called_once()
+
+
+class TestShowFormatPicker:
+    """Test format selection dialog."""
+
+    def test_show_format_picker_returns_txt_for_first_button(self):
+        """show_format_picker returns 'txt' when Plain Text button clicked."""
+        from hanasu.menubar import show_format_picker
+
+        with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+            mock_alert = MagicMock()
+            mock_alert_class.alloc.return_value.init.return_value = mock_alert
+            mock_alert.runModal.return_value = 1000  # First button
+
+            result = show_format_picker()
+
+            assert result == "txt"
+
+    def test_show_format_picker_returns_vtt_for_second_button(self):
+        """show_format_picker returns 'vtt' when VTT button clicked."""
+        from hanasu.menubar import show_format_picker
+
+        with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+            mock_alert = MagicMock()
+            mock_alert_class.alloc.return_value.init.return_value = mock_alert
+            mock_alert.runModal.return_value = 1001  # Second button
+
+            result = show_format_picker()
+
+            assert result == "vtt"
+
+    def test_show_format_picker_returns_none_for_cancel(self):
+        """show_format_picker returns None when Cancel button clicked."""
+        from hanasu.menubar import show_format_picker
+
+        with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+            mock_alert = MagicMock()
+            mock_alert_class.alloc.return_value.init.return_value = mock_alert
+            mock_alert.runModal.return_value = 1002  # Third button (Cancel)
+
+            result = show_format_picker()
+
+            assert result is None
+
+    def test_show_format_picker_configures_dialog(self):
+        """show_format_picker sets up dialog with correct buttons."""
+        from hanasu.menubar import show_format_picker
+
+        with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+            mock_alert = MagicMock()
+            mock_alert_class.alloc.return_value.init.return_value = mock_alert
+            mock_alert.runModal.return_value = 1002
+
+            show_format_picker()
+
+            mock_alert.setMessageText_.assert_called_once()
+            # Should have 3 buttons: Plain Text, VTT, Cancel
+            assert mock_alert.addButtonWithTitle_.call_count == 3
