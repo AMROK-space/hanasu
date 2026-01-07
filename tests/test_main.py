@@ -869,3 +869,81 @@ class TestChangeModel:
                                         "medium"
                                     )
                                     mock_menubar.refreshModelStates.assert_called()
+
+
+class TestMenubarWiring:
+    """Test wiring between Hanasu and MenuBar for model selection."""
+
+    def test_run_passes_model_callbacks_to_menubar(self, tmp_path: Path):
+        """Hanasu.run() passes model callbacks to run_menubar_app."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener:
+                            with patch(
+                                "hanasu.main.run_menubar_app"
+                            ) as mock_menubar_app:
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(
+                                        terms=[], replacements={}
+                                    )
+                                    mock_listener_instance = MagicMock()
+                                    mock_listener.return_value = mock_listener_instance
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app.run()
+
+                                    # Verify run_menubar_app was called with model params
+                                    mock_menubar_app.assert_called_once()
+                                    call_kwargs = mock_menubar_app.call_args[1]
+
+                                    assert "on_model_change" in call_kwargs
+                                    assert "current_model" in call_kwargs
+                                    assert "is_model_cached" in call_kwargs
+                                    assert call_kwargs["current_model"] == "small"
+
+    def test_on_model_change_callback_calls_change_model(self, tmp_path: Path):
+        """Model change callback from menubar triggers change_model."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch(
+                                "hanasu.main.run_menubar_app"
+                            ) as mock_menubar_app:
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(
+                                        terms=[], replacements={}
+                                    )
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app.change_model = MagicMock()
+                                    app.run()
+
+                                    # Get the callback that was passed
+                                    call_kwargs = mock_menubar_app.call_args[1]
+                                    on_model_change = call_kwargs["on_model_change"]
+
+                                    # Simulate menubar calling back
+                                    on_model_change("medium")
+
+                                    # Verify change_model was called
+                                    app.change_model.assert_called_once_with("medium")

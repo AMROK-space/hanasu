@@ -167,7 +167,10 @@ class Hanasu:
             on_quit=self._on_quit,
             on_hotkey_change=self._on_hotkey_change,
             on_update=self._on_update,
+            on_model_change=self._on_model_change,
             version=__version__,
+            current_model=self.config.model,
+            is_model_cached=is_model_cached,
         )
 
         # Check for updates in background
@@ -228,6 +231,14 @@ class Hanasu:
 
         update_thread = threading.Thread(target=do_update, daemon=True)
         update_thread.start()
+
+    def _on_model_change(self, new_model: str) -> None:
+        """Handle model change from menu bar.
+
+        Args:
+            new_model: New model size to switch to.
+        """
+        self.change_model(new_model)
 
     def _on_quit(self) -> None:
         """Handle quit from menu bar."""
