@@ -398,69 +398,158 @@ class TestExtractAudioFromVideo:
         video_file = tmp_path / "test.mp4"
         video_file.touch()
 
-        with patch("hanasu.main.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with patch("hanasu.main.find_ffmpeg") as mock_find:
+            with patch("hanasu.main.subprocess.run") as mock_run:
+                mock_find.return_value = "/opt/homebrew/bin/ffmpeg"
+                mock_run.return_value = MagicMock(returncode=0, stderr="")
 
-            result = extract_audio_from_video(str(video_file))
+                result = extract_audio_from_video(str(video_file))
 
-            # Verify ffmpeg was called
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args[0][0]
+                # Verify ffmpeg was called
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
 
-            # Check key arguments
-            assert call_args[0] == "ffmpeg"
-            assert "-i" in call_args
-            assert str(video_file) in call_args
-            assert "-vn" in call_args  # No video
-            assert "-acodec" in call_args
-            assert "pcm_s16le" in call_args  # WAV codec
-            assert "-ar" in call_args
-            assert "16000" in call_args  # 16kHz sample rate
-            assert "-ac" in call_args
-            assert "1" in call_args  # Mono
-            assert "-y" in call_args  # Overwrite
+                # Check key arguments (now uses full path from find_ffmpeg)
+                assert call_args[0] == "/opt/homebrew/bin/ffmpeg"
+                assert "-i" in call_args
+                assert str(video_file) in call_args
+                assert "-vn" in call_args  # No video
+                assert "-acodec" in call_args
+                assert "pcm_s16le" in call_args  # WAV codec
+                assert "-ar" in call_args
+                assert "16000" in call_args  # 16kHz sample rate
+                assert "-ac" in call_args
+                assert "1" in call_args  # Mono
+                assert "-y" in call_args  # Overwrite
 
-            # Clean up temp file
-            if Path(result).exists():
-                Path(result).unlink()
+                # Clean up temp file
+                if Path(result).exists():
+                    Path(result).unlink()
 
     def test_returns_temp_wav_path(self, tmp_path: Path):
         """Returns path to temporary WAV file."""
         video_file = tmp_path / "test.mp4"
         video_file.touch()
 
-        with patch("hanasu.main.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with patch("hanasu.main.find_ffmpeg") as mock_find:
+            with patch("hanasu.main.subprocess.run") as mock_run:
+                mock_find.return_value = "/opt/homebrew/bin/ffmpeg"
+                mock_run.return_value = MagicMock(returncode=0, stderr="")
 
-            result = extract_audio_from_video(str(video_file))
+                result = extract_audio_from_video(str(video_file))
 
-            assert result.endswith(".wav")
+                assert result.endswith(".wav")
 
-            # Clean up temp file
-            if Path(result).exists():
-                Path(result).unlink()
+                # Clean up temp file
+                if Path(result).exists():
+                    Path(result).unlink()
 
     def test_raises_error_on_ffmpeg_failure(self, tmp_path: Path):
         """Raises RuntimeError when ffmpeg fails."""
         video_file = tmp_path / "test.mp4"
         video_file.touch()
 
-        with patch("hanasu.main.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=1, stderr="Error: No audio stream found")
+        with patch("hanasu.main.find_ffmpeg") as mock_find:
+            with patch("hanasu.main.subprocess.run") as mock_run:
+                mock_find.return_value = "/opt/homebrew/bin/ffmpeg"
+                mock_run.return_value = MagicMock(
+                    returncode=1, stderr="Error: No audio stream found"
+                )
 
-            with pytest.raises(RuntimeError, match="(?i)ffmpeg|audio"):
-                extract_audio_from_video(str(video_file))
+                with pytest.raises(RuntimeError, match="(?i)ffmpeg|audio"):
+                    extract_audio_from_video(str(video_file))
 
     def test_raises_error_when_ffmpeg_not_installed(self, tmp_path: Path):
         """Raises helpful error when ffmpeg is not installed."""
         video_file = tmp_path / "test.mp4"
         video_file.touch()
 
-        with patch("hanasu.main.subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError("ffmpeg not found")
+        with patch("hanasu.main.find_ffmpeg") as mock_find:
+            mock_find.return_value = None
 
             with pytest.raises(RuntimeError, match="(?i)ffmpeg.*install"):
                 extract_audio_from_video(str(video_file))
+
+
+class TestFindFfmpeg:
+    """Test ffmpeg binary discovery for macOS GUI apps."""
+
+    def test_returns_homebrew_apple_silicon_path_when_exists(self):
+        """Returns /opt/homebrew/bin/ffmpeg when it exists."""
+        from hanasu.main import find_ffmpeg
+
+        with patch("hanasu.main.Path.exists") as mock_exists:
+            # First call is for /opt/homebrew/bin/ffmpeg, should return True
+            mock_exists.side_effect = [True]
+
+            result = find_ffmpeg()
+
+            assert result == "/opt/homebrew/bin/ffmpeg"
+
+    def test_returns_homebrew_intel_path_when_apple_silicon_missing(self):
+        """Returns /usr/local/bin/ffmpeg when Apple Silicon path missing."""
+        from hanasu.main import find_ffmpeg
+
+        with patch("hanasu.main.Path.exists") as mock_exists:
+            # First call is for /opt/homebrew/bin/ffmpeg (False)
+            # Second call is for /usr/local/bin/ffmpeg (True)
+            mock_exists.side_effect = [False, True]
+
+            result = find_ffmpeg()
+
+            assert result == "/usr/local/bin/ffmpeg"
+
+    def test_returns_which_result_when_homebrew_paths_missing(self):
+        """Falls back to shutil.which when Homebrew paths don't exist."""
+        from hanasu.main import find_ffmpeg
+
+        with patch("hanasu.main.Path.exists") as mock_exists:
+            with patch("hanasu.main.shutil.which") as mock_which:
+                # Both Homebrew paths don't exist
+                mock_exists.side_effect = [False, False]
+                mock_which.return_value = "/some/other/path/ffmpeg"
+
+                result = find_ffmpeg()
+
+                assert result == "/some/other/path/ffmpeg"
+                mock_which.assert_called_once_with("ffmpeg")
+
+    def test_returns_none_when_ffmpeg_not_found_anywhere(self):
+        """Returns None when ffmpeg not found in any location."""
+        from hanasu.main import find_ffmpeg
+
+        with patch("hanasu.main.Path.exists") as mock_exists:
+            with patch("hanasu.main.shutil.which") as mock_which:
+                mock_exists.side_effect = [False, False]
+                mock_which.return_value = None
+
+                result = find_ffmpeg()
+
+                assert result is None
+
+
+class TestExtractAudioUsesFoundFfmpeg:
+    """Test that extract_audio_from_video uses find_ffmpeg result."""
+
+    def test_uses_found_ffmpeg_path(self, tmp_path: Path):
+        """Calls subprocess with the path returned by find_ffmpeg."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with patch("hanasu.main.find_ffmpeg") as mock_find:
+            with patch("hanasu.main.subprocess.run") as mock_run:
+                mock_find.return_value = "/opt/homebrew/bin/ffmpeg"
+                mock_run.return_value = MagicMock(returncode=0, stderr="")
+
+                result = extract_audio_from_video(str(video_file))
+
+                # Verify ffmpeg path is used
+                call_args = mock_run.call_args[0][0]
+                assert call_args[0] == "/opt/homebrew/bin/ffmpeg"
+
+                # Clean up
+                if Path(result).exists():
+                    Path(result).unlink()
 
 
 class TestRunTranscribeVideo:
@@ -835,9 +924,7 @@ class TestChangeModel:
                                         debug=True,
                                         clear_clipboard=False,
                                     )
-                                    mock_dict.return_value = MagicMock(
-                                        terms=[], replacements={}
-                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                     app = Hanasu(config_dir=tmp_path)
                                     # Simulate a model change already in progress

@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -931,6 +932,28 @@ def is_video_file(file_path: str | Path) -> bool:
     return Path(file_path).suffix.lower() in VIDEO_EXTENSIONS
 
 
+def find_ffmpeg() -> str | None:
+    """Find ffmpeg binary, checking common macOS locations.
+
+    macOS GUI apps don't inherit shell PATH, so we check Homebrew paths first.
+
+    Returns:
+        Path to ffmpeg binary, or None if not found.
+    """
+    # Check Homebrew paths first (GUI apps don't have shell PATH)
+    homebrew_paths = [
+        "/opt/homebrew/bin/ffmpeg",  # Apple Silicon
+        "/usr/local/bin/ffmpeg",  # Intel Mac
+    ]
+
+    for path in homebrew_paths:
+        if Path(path).exists():
+            return path
+
+    # Fall back to shutil.which for other installations
+    return shutil.which("ffmpeg")
+
+
 def extract_audio_from_video(video_path: str) -> str:
     """Extract audio from a video file to a temporary WAV file.
 
@@ -945,6 +968,14 @@ def extract_audio_from_video(video_path: str) -> str:
     """
     import tempfile
 
+    # Find ffmpeg binary (macOS GUI apps don't have shell PATH)
+    ffmpeg_path = find_ffmpeg()
+    if ffmpeg_path is None:
+        raise RuntimeError(
+            "ffmpeg not found. Please install ffmpeg to transcribe video files.\n"
+            "Install with: brew install ffmpeg"
+        )
+
     # Create temp file for extracted audio
     temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     temp_path = temp_file.name
@@ -953,7 +984,7 @@ def extract_audio_from_video(video_path: str) -> str:
     try:
         result = subprocess.run(
             [
-                "ffmpeg",
+                ffmpeg_path,
                 "-i",
                 video_path,
                 "-vn",  # No video
