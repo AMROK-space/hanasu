@@ -13,7 +13,7 @@ set -euo pipefail
 
 INSTALL_DIR="$HOME/.hanasu"
 SRC_DIR="$INSTALL_DIR/src"
-VENV_DIR="$INSTALL_DIR/.venv"
+VENV_DIR="$SRC_DIR/.venv"
 MANIFEST_FILE="$INSTALL_DIR/.install-manifest"
 LEGACY_DIR="$HOME/.hanasu-src"
 REPO_URL="https://github.com/amrok-space/hanasu.git"

@@ -537,12 +537,13 @@ def run_doctor() -> None:
     - No conflicting installations
     """
     install_dir = Path.home() / ".hanasu"
+    src_dir = install_dir / "src"
     manifest_file = install_dir / ".install-manifest"
     legacy_dir = Path.home() / ".hanasu-src"
     plist_path = Path.home() / "Library" / "LaunchAgents" / "com.amrok.hanasu.plist"
     app_path = Path("/Applications/Hanasu.app")
     cli_link = Path.home() / ".local" / "bin" / "hanasu"
-    venv_bin = install_dir / ".venv" / "bin" / "hanasu"
+    venv_bin = src_dir / ".venv" / "bin" / "hanasu"
 
     issues = []
     warnings = []
@@ -566,7 +567,6 @@ def run_doctor() -> None:
         warnings.append("No install manifest found (may be legacy install)")
 
     # Check source directory
-    src_dir = install_dir / "src"
     if src_dir.exists():
         print(f"  ✓ Source: {src_dir}")
         if (src_dir / ".git").exists():
