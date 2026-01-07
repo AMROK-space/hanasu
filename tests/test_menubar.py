@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+from hanasu.config import VALID_MODELS
 from hanasu.updater import UpdateStatus
 
 
@@ -302,3 +303,106 @@ class TestHotkeyValidation:
 
                         # Callback should NOT be called
                         callback.assert_not_called()
+
+
+class TestModelSubmenu:
+    """Test model selection submenu functionality."""
+
+    def test_run_menubar_app_accepts_model_change_callback(self):
+        """run_menubar_app accepts on_model_change callback parameter."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                model_callback = MagicMock()
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    on_model_change=model_callback,
+                    current_model="small",
+                    is_model_cached=lambda m: True,
+                )
+
+                assert delegate is not None
+                assert delegate._callbacks.get("on_model_change") == model_callback
+
+    def test_menubar_stores_current_model(self):
+        """MenuBarApp stores current model for indicator display."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    current_model="medium",
+                    is_model_cached=lambda m: True,
+                )
+
+                assert delegate._current_model == "medium"
+
+    def test_menubar_stores_cache_checker_function(self):
+        """MenuBarApp stores is_model_cached function for checking download state."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                cache_fn = lambda m: m == "small"
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    is_model_cached=cache_fn,
+                )
+
+                assert delegate._is_model_cached_fn == cache_fn
+
+    def test_model_submenu_contains_all_valid_models(self):
+        """Model submenu should have an item for each valid model."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+
+            delegate.setupStatusBar(version="0.1.0")
+
+            # Should have model_menu_items for all valid models
+            assert set(delegate._model_menu_items.keys()) == VALID_MODELS
+
+    def test_select_model_triggers_callback_with_model_name(self):
+        """Selecting a model triggers on_model_change callback with model name."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert"):  # Prevent confirmation dialog
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_(
+                    {"on_model_change": callback}
+                )
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: True  # All cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                # Simulate selecting the "medium" model
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "medium"
+                delegate.selectModel_(mock_sender)
+
+                callback.assert_called_once_with("medium")

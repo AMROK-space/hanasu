@@ -19,6 +19,7 @@ from AppKit import (
 from Foundation import NSArray, NSDefaultRunLoopMode, NSObject
 from PyObjCTools import AppHelper
 
+from hanasu.config import MODEL_INFO
 from hanasu.hotkey import parse_hotkey
 
 if TYPE_CHECKING:
@@ -46,6 +47,12 @@ class MenuBarApp(NSObject):
         self._update_status = None
         self._is_recording = False
         self._hotkey_display = "?"
+
+        # Model selection state
+        self._current_model = "small"
+        self._model_menu_items = {}
+        self._is_model_cached_fn = None
+        self._downloading_models = set()
 
         return self
 
@@ -77,6 +84,14 @@ class MenuBarApp(NSObject):
         )
         change_hotkey_item.setTarget_(self)
         menu.addItem_(change_hotkey_item)
+
+        # Model submenu
+        model_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Model", None, ""
+        )
+        model_submenu = self._createModelSubmenu()
+        model_menu_item.setSubmenu_(model_submenu)
+        menu.addItem_(model_menu_item)
 
         # Separator
         menu.addItem_(NSMenuItem.separatorItem())
@@ -249,6 +264,59 @@ class MenuBarApp(NSObject):
             self._callbacks["on_quit"]()
         NSApplication.sharedApplication().terminate_(None)
 
+    @objc.python_method
+    def _createModelSubmenu(self) -> NSMenu:
+        """Create the model selection submenu."""
+        submenu = NSMenu.alloc().init()
+
+        # Model order for consistent display
+        model_order = ["tiny", "base", "small", "medium", "large"]
+
+        for model in model_order:
+            info = MODEL_INFO.get(model, {"label": model})
+            title = self._formatModelTitle(model, info)
+
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                title, "selectModel:", ""
+            )
+            item.setTarget_(self)
+            item.setRepresentedObject_(model)
+            submenu.addItem_(item)
+            self._model_menu_items[model] = item
+
+        return submenu
+
+    @objc.python_method
+    def _formatModelTitle(self, model: str, info: dict) -> str:
+        """Format the title for a model menu item.
+
+        Args:
+            model: Model name (e.g., "small").
+            info: MODEL_INFO dict entry with 'label' etc.
+
+        Returns:
+            Formatted title like "● ✓ small (244MB, balanced)".
+        """
+        is_current = model == self._current_model
+        is_cached = self._is_model_cached_fn(model) if self._is_model_cached_fn else False
+        is_downloading = model in self._downloading_models
+
+        if is_downloading:
+            return f"  ⏳ {info.get('label', model)} (downloading...)"
+
+        indicator = "● " if is_current else "  "
+        cache_icon = "✓ " if is_cached else "↓ "
+        return f"{indicator}{cache_icon}{info.get('label', model)}"
+
+    def selectModel_(self, sender):
+        """Handle model selection from submenu."""
+        model = sender.representedObject()
+        if not model:
+            return
+
+        if self._callbacks.get("on_model_change"):
+            self._callbacks["on_model_change"](model)
+
 
 def validate_hotkey(hotkey_str: str, timeout: float = 5.0) -> bool:
     """Validate a hotkey by waiting for user to press it.
@@ -348,7 +416,10 @@ def run_menubar_app(
     on_quit: Callable[[], None] | None = None,
     on_hotkey_change: Callable[[str], None] | None = None,
     on_update: Callable[[], None] | None = None,
+    on_model_change: Callable[[str], None] | None = None,
     version: str = "",
+    current_model: str = "small",
+    is_model_cached: Callable[[str], bool] | None = None,
 ) -> MenuBarApp:
     """Create and run the menu bar app.
 
@@ -357,7 +428,10 @@ def run_menubar_app(
         on_quit: Callback when user quits from menu.
         on_hotkey_change: Callback when user changes hotkey (receives new hotkey string).
         on_update: Callback when user triggers update from menu.
+        on_model_change: Callback when user selects a different model.
         version: Current app version to display.
+        current_model: Currently selected model name.
+        is_model_cached: Function to check if a model is downloaded.
 
     Returns:
         MenuBarApp instance for updating state.
@@ -370,9 +444,12 @@ def run_menubar_app(
             "on_quit": on_quit,
             "on_hotkey_change": on_hotkey_change,
             "on_update": on_update,
+            "on_model_change": on_model_change,
         }
     )
     delegate.setHotkey_(hotkey)
+    delegate._current_model = current_model
+    delegate._is_model_cached_fn = is_model_cached
     delegate.setupStatusBar(version=version)
 
     return delegate
