@@ -596,3 +596,48 @@ class TestModelStateUpdates:
             large_title = large_item.title()
             assert "●" not in large_title
             assert "↓" in large_title
+
+
+class TestMenuDelegate:
+    """Test menu delegate for refreshing cache state on submenu open."""
+
+    def test_model_submenu_has_delegate_set(self):
+        """Model submenu should have a delegate set for menuWillOpen notifications."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+
+            delegate.setupStatusBar(version="0.1.0")
+
+            # Model submenu should have delegate set
+            assert delegate._model_submenu.delegate() is not None
+
+    def test_menuWillOpen_refreshes_model_states(self):
+        """menuWillOpen_ should refresh model states when model submenu opens."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            # Track cache check calls
+            cache_calls = []
+
+            def tracking_cache_fn(m):
+                cache_calls.append(m)
+                return m == "small"
+
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = tracking_cache_fn
+
+            delegate.setupStatusBar(version="0.1.0")
+
+            # Clear calls from setup
+            cache_calls.clear()
+
+            # Simulate menu opening (this should refresh states)
+            delegate.menuWillOpen_(delegate._model_submenu)
+
+            # Should have checked cache for all models
+            assert len(cache_calls) == 5  # All 5 models checked

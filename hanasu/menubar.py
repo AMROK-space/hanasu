@@ -53,6 +53,7 @@ class MenuBarApp(NSObject):
         self._model_menu_items = {}
         self._is_model_cached_fn = None
         self._downloading_models = set()
+        self._model_submenu = None
 
         return self
 
@@ -264,10 +265,21 @@ class MenuBarApp(NSObject):
             self._callbacks["on_quit"]()
         NSApplication.sharedApplication().terminate_(None)
 
+    def menuWillOpen_(self, menu):
+        """Called when a menu is about to open (NSMenuDelegate).
+
+        Refreshes model cache states when the model submenu is opened.
+        """
+        if menu == self._model_submenu:
+            self.refreshModelStates()
+
     @objc.python_method
     def _createModelSubmenu(self) -> NSMenu:
         """Create the model selection submenu."""
         submenu = NSMenu.alloc().init()
+
+        # Set delegate for menuWillOpen notification
+        submenu.setDelegate_(self)
 
         # Model order for consistent display
         model_order = ["tiny", "base", "small", "medium", "large"]
@@ -283,6 +295,9 @@ class MenuBarApp(NSObject):
             item.setRepresentedObject_(model)
             submenu.addItem_(item)
             self._model_menu_items[model] = item
+
+        # Store reference for delegate
+        self._model_submenu = submenu
 
         return submenu
 
