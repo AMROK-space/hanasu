@@ -10,6 +10,7 @@ from pathlib import Path
 from hanasu import __version__
 from hanasu.config import (
     DEFAULT_CONFIG,
+    VALID_MODELS,
     Config,
     load_config,
     load_dictionary,
@@ -90,6 +91,69 @@ class Hanasu:
 
         if self.config.debug:
             print(f"[hanasu] Hotkey changed to: {new_hotkey}")
+
+    def change_model(self, new_model: str) -> None:
+        """Change the whisper model (hot-swap).
+
+        Downloads the model if not cached, then creates a new Transcriber.
+        Runs in a background thread to avoid blocking the UI.
+
+        Args:
+            new_model: Model size (tiny, base, small, medium, large).
+        """
+        # Validate model
+        if new_model not in VALID_MODELS:
+            if self.config.debug:
+                print(f"[hanasu] Invalid model: {new_model}")
+            return
+
+        # No-op if same model
+        if new_model == self.config.model:
+            return
+
+        # Block while recording
+        if self._recording:
+            if self.config.debug:
+                print("[hanasu] Cannot change model while recording")
+            return
+
+        def do_change():
+            # Download if not cached
+            if not is_model_cached(new_model):
+                if self._menubar_app:
+                    self._menubar_app.setModelDownloading_(new_model, True)
+                try:
+                    download_model(new_model)
+                finally:
+                    if self._menubar_app:
+                        self._menubar_app.setModelDownloading_(new_model, False)
+
+            # Create new transcriber
+            self.transcriber = Transcriber(
+                model=new_model,
+                language=self.config.language,
+            )
+
+            # Update config
+            self.config = Config(
+                hotkey=self.config.hotkey,
+                model=new_model,
+                language=self.config.language,
+                audio_device=self.config.audio_device,
+                debug=self.config.debug,
+                clear_clipboard=self.config.clear_clipboard,
+            )
+            save_config(self.config, self.config_dir)
+
+            # Update menu bar
+            if self._menubar_app:
+                self._menubar_app.setCurrentModel_(new_model)
+                self._menubar_app.refreshModelStates()
+
+            if self.config.debug:
+                print(f"[hanasu] Model changed to: {new_model}")
+
+        threading.Thread(target=do_change, daemon=True).start()
 
     def run(self) -> None:
         """Start the daemon and listen for hotkey."""
