@@ -53,6 +53,7 @@ class Hanasu:
 
         self._recording = False
         self._menubar_app = None
+        self._model_change_in_progress = False
 
         if self.config.debug:
             print(f"[hanasu] Initialized with hotkey: {self.config.hotkey}")
@@ -117,41 +118,52 @@ class Hanasu:
                 print("[hanasu] Cannot change model while recording")
             return
 
-        def do_change():
-            # Download if not cached
-            if not is_model_cached(new_model):
-                if self._menubar_app:
-                    self._menubar_app.setModelDownloading_(new_model, True)
-                try:
-                    download_model(new_model)
-                finally:
-                    if self._menubar_app:
-                        self._menubar_app.setModelDownloading_(new_model, False)
-
-            # Create new transcriber
-            self.transcriber = Transcriber(
-                model=new_model,
-                language=self.config.language,
-            )
-
-            # Update config
-            self.config = Config(
-                hotkey=self.config.hotkey,
-                model=new_model,
-                language=self.config.language,
-                audio_device=self.config.audio_device,
-                debug=self.config.debug,
-                clear_clipboard=self.config.clear_clipboard,
-            )
-            save_config(self.config, self.config_dir)
-
-            # Update menu bar
-            if self._menubar_app:
-                self._menubar_app.setCurrentModel_(new_model)
-                self._menubar_app.refreshModelStates()
-
+        # Prevent concurrent model changes
+        if self._model_change_in_progress:
             if self.config.debug:
-                print(f"[hanasu] Model changed to: {new_model}")
+                print("[hanasu] Model change already in progress")
+            return
+
+        self._model_change_in_progress = True
+
+        def do_change():
+            try:
+                # Download if not cached
+                if not is_model_cached(new_model):
+                    if self._menubar_app:
+                        self._menubar_app.setModelDownloading_(new_model, True)
+                    try:
+                        download_model(new_model)
+                    finally:
+                        if self._menubar_app:
+                            self._menubar_app.setModelDownloading_(new_model, False)
+
+                # Create new transcriber
+                self.transcriber = Transcriber(
+                    model=new_model,
+                    language=self.config.language,
+                )
+
+                # Update config
+                self.config = Config(
+                    hotkey=self.config.hotkey,
+                    model=new_model,
+                    language=self.config.language,
+                    audio_device=self.config.audio_device,
+                    debug=self.config.debug,
+                    clear_clipboard=self.config.clear_clipboard,
+                )
+                save_config(self.config, self.config_dir)
+
+                # Update menu bar
+                if self._menubar_app:
+                    self._menubar_app.setCurrentModel_(new_model)
+                    self._menubar_app.refreshModelStates()
+
+                if self.config.debug:
+                    print(f"[hanasu] Model changed to: {new_model}")
+            finally:
+                self._model_change_in_progress = False
 
         threading.Thread(target=do_change, daemon=True).start()
 

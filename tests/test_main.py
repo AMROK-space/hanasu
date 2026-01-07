@@ -818,6 +818,40 @@ class TestChangeModel:
                                 assert mock_transcriber_class.call_count == initial_call_count
                                 mock_save.assert_not_called()
 
+    def test_change_model_blocked_while_change_in_progress(self, tmp_path: Path):
+        """Model change is blocked while another change is in progress."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config") as mock_save:
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(
+                                        terms=[], replacements={}
+                                    )
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    # Simulate a model change already in progress
+                                    app._model_change_in_progress = True
+
+                                    initial_call_count = mock_transcriber_class.call_count
+                                    mock_save.reset_mock()
+
+                                    app.change_model("medium")
+
+                                    # Should not start new change
+                                    assert mock_transcriber_class.call_count == initial_call_count
+                                    mock_save.assert_not_called()
+
     def test_change_model_updates_menubar(self, tmp_path: Path):
         """Changing model updates the menu bar state."""
         with patch("hanasu.main.load_config") as mock_config:
