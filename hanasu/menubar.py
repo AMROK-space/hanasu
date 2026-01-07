@@ -336,6 +336,67 @@ class MenuBarApp(NSObject):
         if self._callbacks.get("on_model_change"):
             self._callbacks["on_model_change"](model)
 
+    def setCurrentModel_(self, model: str):
+        """Update current model indicator (thread-safe).
+
+        Args:
+            model: The new current model name.
+        """
+        self._pending_current_model = model
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "applyCurrentModel", None, False
+        )
+
+    def applyCurrentModel(self):
+        """Apply current model indicator on main thread."""
+        new_model = getattr(self, "_pending_current_model", None)
+        if not new_model:
+            return
+
+        self._current_model = new_model
+        self.refreshModelStates()
+
+    @objc.python_method
+    def setModelDownloading_(self, model: str, downloading: bool):
+        """Update downloading state for a model (thread-safe).
+
+        Args:
+            model: Model name.
+            downloading: True if download in progress, False when complete.
+        """
+        self._pending_download_state = (model, downloading)
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "applyDownloadState", None, False
+        )
+
+    def applyDownloadState(self):
+        """Apply download state on main thread."""
+        state = getattr(self, "_pending_download_state", None)
+        if not state:
+            return
+        model, downloading = state
+
+        if downloading:
+            self._downloading_models.add(model)
+        else:
+            self._downloading_models.discard(model)
+
+        # Update the specific menu item
+        if model in self._model_menu_items:
+            item = self._model_menu_items[model]
+            info = MODEL_INFO.get(model, {"label": model})
+            title = self._formatModelTitle(model, info)
+            item.setTitle_(title)
+            item.setEnabled_(not downloading)
+
+    @objc.python_method
+    def refreshModelStates(self):
+        """Refresh all model menu item titles based on current state."""
+        for model, item in self._model_menu_items.items():
+            info = MODEL_INFO.get(model, {"label": model})
+            title = self._formatModelTitle(model, info)
+            item.setTitle_(title)
+
 
 def validate_hotkey(hotkey_str: str, timeout: float = 5.0) -> bool:
     """Validate a hotkey by waiting for user to press it.

@@ -517,3 +517,82 @@ class TestDownloadConfirmation:
 
                 # Should NOT call callback after Cancel
                 callback.assert_not_called()
+
+
+class TestModelStateUpdates:
+    """Test model state update methods for menu bar."""
+
+    def test_setCurrentModel_updates_current_model(self):
+        """setCurrentModel_ updates the stored current model."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+            delegate._current_model = "small"
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.setCurrentModel_("large")
+            # Simulate main thread call
+            delegate.applyCurrentModel()
+
+            assert delegate._current_model == "large"
+
+    def test_setModelDownloading_adds_to_downloading_set(self):
+        """setModelDownloading_ marks model as downloading."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.setModelDownloading_("large", True)
+            # Simulate main thread call
+            delegate.applyDownloadState()
+
+            assert "large" in delegate._downloading_models
+
+    def test_setModelDownloading_removes_from_downloading_set(self):
+        """setModelDownloading_ with False removes model from downloading set."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+            delegate._downloading_models = {"large"}
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.setModelDownloading_("large", False)
+            # Simulate main thread call
+            delegate.applyDownloadState()
+
+            assert "large" not in delegate._downloading_models
+
+    def test_refreshModelStates_updates_all_menu_items(self):
+        """refreshModelStates updates titles for all model menu items."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: m in ["small", "tiny"]
+            delegate._current_model = "small"
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.refreshModelStates()
+
+            # Verify small has current indicator (●) and cached (✓)
+            small_item = delegate._model_menu_items["small"]
+            small_title = small_item.title()
+            assert "●" in small_title
+            assert "✓" in small_title
+
+            # Verify large has no current indicator and download icon (↓)
+            large_item = delegate._model_menu_items["large"]
+            large_title = large_item.title()
+            assert "●" not in large_title
+            assert "↓" in large_title
