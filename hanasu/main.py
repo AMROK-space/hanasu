@@ -287,7 +287,7 @@ class Hanasu:
 
 
 def download_model(model: str = "small") -> None:
-    """Download the whisper model.
+    """Download the whisper model if not already cached.
 
     Args:
         model: Model size to download.
@@ -297,9 +297,18 @@ def download_model(model: str = "small") -> None:
     from hanasu.transcriber import MODEL_PATHS
 
     model_path = MODEL_PATHS.get(model, MODEL_PATHS["small"])
-    print(f"Downloading {model} model from {model_path}...")
 
-    # Trigger download by doing a dummy transcription
+    # Check if model is already cached
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cache_name = f"models--{model_path.replace('/', '--')}"
+    model_cached = (cache_dir / model_cache_name).exists()
+
+    if model_cached:
+        print(f"Model {model} already cached, verifying...")
+    else:
+        print(f"Downloading {model} model from {model_path}...")
+
+    # Trigger download/verification by doing a dummy transcription
     import numpy as np
 
     dummy_audio = np.zeros(16000, dtype=np.float32)  # 1 second of silence
@@ -310,9 +319,12 @@ def download_model(model: str = "small") -> None:
             path_or_hf_repo=model_path,
             language="en",
         )
-        print("Model downloaded successfully!")
+        if model_cached:
+            print("Model verified!")
+        else:
+            print("Model downloaded successfully!")
     except Exception as e:
-        print(f"Warning: Could not fully verify model download: {e}")
+        print(f"Warning: Could not fully verify model: {e}")
         print("Model files should be cached for future use.")
 
 
