@@ -43,9 +43,27 @@ After installation, Hanasu runs in your menu bar:
 
 - **Hotkey** - Shows current hotkey for push-to-talk
 - **Change Hotkey...** - Opens dialog to set a new hotkey
+- **Model** - Submenu to switch between Whisper models (see below)
 - **Transcribe File...** - Opens file picker to transcribe audio/video files (see below)
 - **Version / Update** - Shows current version and update status
 - **Quit** - Stops Hanasu
+
+### Model Selection (Menu)
+
+Switch between Whisper models directly from the menu bar without restarting:
+
+- **tiny** (~75MB) - Fastest, lower accuracy
+- **base** (~140MB) - Fast, decent accuracy
+- **small** (~460MB) - Balanced speed/accuracy (default)
+- **medium** (~1.5GB) - Better accuracy, slower
+- **large** (~3GB) - Best accuracy, slowest
+
+The menu shows:
+- **●** Current model
+- **✓** Models already downloaded (cached)
+- **↓** Models that need to be downloaded
+
+Selecting an uncached model will prompt to confirm before downloading.
 
 ### Transcribe File (Menu)
 
