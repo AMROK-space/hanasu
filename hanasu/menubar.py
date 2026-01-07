@@ -50,9 +50,9 @@ class MenuBarApp(NSObject):
 
         # Model selection state
         self._current_model = "small"
-        self._model_menu_items = {}
+        self._model_menu_items: dict[str, NSMenuItem] = {}
         self._is_model_cached_fn = None
-        self._downloading_models = set()
+        self._downloading_models: set[str] = set()
         self._model_submenu = None
 
         return self
@@ -87,9 +87,7 @@ class MenuBarApp(NSObject):
         menu.addItem_(change_hotkey_item)
 
         # Model submenu
-        model_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Model", None, ""
-        )
+        model_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Model", None, "")
         model_submenu = self._createModelSubmenu()
         model_menu_item.setSubmenu_(model_submenu)
         menu.addItem_(model_menu_item)
@@ -288,9 +286,7 @@ class MenuBarApp(NSObject):
             info = MODEL_INFO.get(model, {"label": model})
             title = self._formatModelTitle(model, info)
 
-            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                title, "selectModel:", ""
-            )
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, "selectModel:", "")
             item.setTarget_(self)
             item.setRepresentedObject_(model)
             submenu.addItem_(item)
@@ -358,9 +354,7 @@ class MenuBarApp(NSObject):
             model: The new current model name.
         """
         self._pending_current_model = model
-        self.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "applyCurrentModel", None, False
-        )
+        self.performSelectorOnMainThread_withObject_waitUntilDone_("applyCurrentModel", None, False)
 
     def applyCurrentModel(self):
         """Apply current model indicator on main thread."""

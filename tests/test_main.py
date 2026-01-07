@@ -632,12 +632,9 @@ class TestChangeModel:
                                         debug=False,
                                         clear_clipboard=False,
                                     )
-                                    mock_dict.return_value = MagicMock(
-                                        terms=[], replacements={}
-                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                     app = Hanasu(config_dir=tmp_path)
-                                    initial_transcriber = app.transcriber
 
                                     # Change to medium model
                                     app.change_model("medium")
@@ -669,9 +666,7 @@ class TestChangeModel:
                                         debug=False,
                                         clear_clipboard=False,
                                     )
-                                    mock_dict.return_value = MagicMock(
-                                        terms=[], replacements={}
-                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                     app = Hanasu(config_dir=tmp_path)
                                     mock_save.reset_mock()
@@ -704,9 +699,7 @@ class TestChangeModel:
                                         debug=True,
                                         clear_clipboard=False,
                                     )
-                                    mock_dict.return_value = MagicMock(
-                                        terms=[], replacements={}
-                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                     app = Hanasu(config_dir=tmp_path)
                                     app._recording = True
@@ -733,13 +726,9 @@ class TestChangeModel:
                 with patch("hanasu.main.Recorder"):
                     with patch("hanasu.main.Transcriber"):
                         with patch("hanasu.main.HotkeyListener"):
-                            with patch(
-                                "hanasu.main.is_model_cached", return_value=False
-                            ):
+                            with patch("hanasu.main.is_model_cached", return_value=False):
                                 with patch("hanasu.main.save_config"):
-                                    with patch(
-                                        "hanasu.main.download_model"
-                                    ) as mock_download:
+                                    with patch("hanasu.main.download_model") as mock_download:
                                         mock_config.return_value = MagicMock(
                                             hotkey="ctrl+shift+space",
                                             model="small",
@@ -779,9 +768,7 @@ class TestChangeModel:
                                     debug=False,
                                     clear_clipboard=False,
                                 )
-                                mock_dict.return_value = MagicMock(
-                                    terms=[], replacements={}
-                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                 app = Hanasu(config_dir=tmp_path)
                                 initial_call_count = mock_transcriber_class.call_count
@@ -814,9 +801,7 @@ class TestChangeModel:
                                     debug=False,
                                     clear_clipboard=False,
                                 )
-                                mock_dict.return_value = MagicMock(
-                                    terms=[], replacements={}
-                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                 app = Hanasu(config_dir=tmp_path)
                                 initial_call_count = mock_transcriber_class.call_count
@@ -850,9 +835,7 @@ class TestChangeModel:
                                         debug=False,
                                         clear_clipboard=False,
                                     )
-                                    mock_dict.return_value = MagicMock(
-                                        terms=[], replacements={}
-                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                     app = Hanasu(config_dir=tmp_path)
                                     mock_menubar = MagicMock()
@@ -865,9 +848,7 @@ class TestChangeModel:
 
                                     time.sleep(0.1)
 
-                                    mock_menubar.setCurrentModel_.assert_called_with(
-                                        "medium"
-                                    )
+                                    mock_menubar.setCurrentModel_.assert_called_with("medium")
                                     mock_menubar.refreshModelStates.assert_called()
 
 
@@ -881,9 +862,7 @@ class TestMenubarWiring:
                 with patch("hanasu.main.Recorder"):
                     with patch("hanasu.main.Transcriber"):
                         with patch("hanasu.main.HotkeyListener") as mock_listener:
-                            with patch(
-                                "hanasu.main.run_menubar_app"
-                            ) as mock_menubar_app:
+                            with patch("hanasu.main.run_menubar_app") as mock_menubar_app:
                                 with patch("hanasu.main.start_app_loop"):
                                     mock_config.return_value = MagicMock(
                                         hotkey="ctrl+shift+space",
@@ -893,9 +872,7 @@ class TestMenubarWiring:
                                         debug=False,
                                         clear_clipboard=False,
                                     )
-                                    mock_dict.return_value = MagicMock(
-                                        terms=[], replacements={}
-                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
                                     mock_listener_instance = MagicMock()
                                     mock_listener.return_value = mock_listener_instance
 
@@ -918,9 +895,7 @@ class TestMenubarWiring:
                 with patch("hanasu.main.Recorder"):
                     with patch("hanasu.main.Transcriber"):
                         with patch("hanasu.main.HotkeyListener"):
-                            with patch(
-                                "hanasu.main.run_menubar_app"
-                            ) as mock_menubar_app:
+                            with patch("hanasu.main.run_menubar_app") as mock_menubar_app:
                                 with patch("hanasu.main.start_app_loop"):
                                     mock_config.return_value = MagicMock(
                                         hotkey="ctrl+shift+space",
@@ -930,9 +905,7 @@ class TestMenubarWiring:
                                         debug=False,
                                         clear_clipboard=False,
                                     )
-                                    mock_dict.return_value = MagicMock(
-                                        terms=[], replacements={}
-                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
 
                                     app = Hanasu(config_dir=tmp_path)
                                     app.change_model = MagicMock()

@@ -361,7 +361,8 @@ class TestModelSubmenu:
                     MagicMock()
                 )
 
-                cache_fn = lambda m: m == "small"
+                def cache_fn(m):
+                    return m == "small"
 
                 delegate = run_menubar_app(
                     hotkey="cmd+v",
@@ -391,9 +392,7 @@ class TestModelSubmenu:
         with patch("hanasu.menubar.NSStatusBar"):
             with patch("hanasu.menubar.NSAlert"):  # Prevent confirmation dialog
                 callback = MagicMock()
-                delegate = MenuBarApp.alloc().initWithCallbacks_(
-                    {"on_model_change": callback}
-                )
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
                 delegate._status_item = MagicMock()
                 delegate._is_model_cached_fn = lambda m: True  # All cached
                 delegate._current_model = "small"
@@ -418,9 +417,7 @@ class TestDownloadConfirmation:
         with patch("hanasu.menubar.NSStatusBar"):
             with patch("hanasu.menubar.NSAlert") as mock_alert_class:
                 callback = MagicMock()
-                delegate = MenuBarApp.alloc().initWithCallbacks_(
-                    {"on_model_change": callback}
-                )
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
                 delegate._status_item = MagicMock()
                 delegate._is_model_cached_fn = lambda m: True  # All cached
                 delegate._current_model = "small"
@@ -447,9 +444,7 @@ class TestDownloadConfirmation:
                 mock_alert.runModal.return_value = 1000  # OK clicked
 
                 callback = MagicMock()
-                delegate = MenuBarApp.alloc().initWithCallbacks_(
-                    {"on_model_change": callback}
-                )
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
                 delegate._status_item = MagicMock()
                 delegate._is_model_cached_fn = lambda m: m == "small"  # Only small cached
                 delegate._current_model = "small"
@@ -475,9 +470,7 @@ class TestDownloadConfirmation:
                 mock_alert.runModal.return_value = 1000  # OK clicked
 
                 callback = MagicMock()
-                delegate = MenuBarApp.alloc().initWithCallbacks_(
-                    {"on_model_change": callback}
-                )
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
                 delegate._status_item = MagicMock()
                 delegate._is_model_cached_fn = lambda m: False  # Nothing cached
                 delegate._current_model = "small"
@@ -502,9 +495,7 @@ class TestDownloadConfirmation:
                 mock_alert.runModal.return_value = 1001  # Cancel clicked
 
                 callback = MagicMock()
-                delegate = MenuBarApp.alloc().initWithCallbacks_(
-                    {"on_model_change": callback}
-                )
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
                 delegate._status_item = MagicMock()
                 delegate._is_model_cached_fn = lambda m: False  # Nothing cached
                 delegate._current_model = "small"

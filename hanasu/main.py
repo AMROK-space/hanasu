@@ -839,13 +839,13 @@ def extract_audio_from_video(video_path: str) -> str:
             capture_output=True,
             text=True,
         )
-    except FileNotFoundError:
+    except FileNotFoundError as err:
         # Clean up temp file before raising
         Path(temp_path).unlink()
         raise RuntimeError(
             "ffmpeg not found. Please install ffmpeg to transcribe video files.\n"
             "Install with: brew install ffmpeg"
-        )
+        ) from err
 
     if result.returncode != 0:
         # Clean up temp file before raising

@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 
 from hanasu.config import (
-    Config,
-    ConfigValidationError,
     MODEL_INFO,
     VALID_MODELS,
+    Config,
+    ConfigValidationError,
     load_config,
     load_dictionary,
     save_config,
