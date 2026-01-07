@@ -100,7 +100,7 @@ hanasu --status     # Show configuration and status
 hanasu setup        # Run first-time setup
 hanasu update       # Update to latest version
 hanasu doctor       # Check installation health
-hanasu transcribe <file> [--vtt] [--large]  # Transcribe audio or video file
+hanasu transcribe <file> [--vtt] [--large] [-o FILE]  # Transcribe audio or video file
 ```
 
 ### Transcribe Command
@@ -119,6 +119,10 @@ hanasu transcribe video.mp4 --vtt
 
 # Use large model for better accuracy
 hanasu transcribe audio.wav --large
+
+# Write output to a file instead of stdout
+hanasu transcribe audio.wav -o transcript.txt
+hanasu transcribe video.mp4 --vtt -o subtitles.vtt
 ```
 
 **Video transcription requires ffmpeg.** Install with:
