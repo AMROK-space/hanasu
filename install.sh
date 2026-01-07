@@ -279,12 +279,40 @@ EOF
 chmod +x "$APP_PATH/Contents/MacOS/hanasu"
 
 # -----------------------------------------------------------------------------
-# Create CLI symlink
+# Create CLI symlink and ensure PATH
 # -----------------------------------------------------------------------------
 
 info "Setting up CLI..."
 mkdir -p "$(dirname "$CLI_LINK")"
 ln -sf "$VENV_DIR/bin/hanasu" "$CLI_LINK"
+
+# Add ~/.local/bin to PATH in shell config if not already there
+PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+SHELL_CONFIGS=("$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile")
+PATH_ADDED=false
+
+for config in "${SHELL_CONFIGS[@]}"; do
+    if [[ -f "$config" ]]; then
+        if ! grep -q '\.local/bin' "$config" 2>/dev/null; then
+            echo "" >> "$config"
+            echo "# Added by Hanasu installer" >> "$config"
+            echo "$PATH_LINE" >> "$config"
+            PATH_ADDED=true
+            info "Added ~/.local/bin to PATH in $config"
+        fi
+    fi
+done
+
+# Create .zshrc if it doesn't exist (macOS default shell)
+if [[ ! -f "$HOME/.zshrc" ]]; then
+    echo "# Added by Hanasu installer" > "$HOME/.zshrc"
+    echo "$PATH_LINE" >> "$HOME/.zshrc"
+    PATH_ADDED=true
+    info "Created ~/.zshrc with PATH"
+fi
+
+# Export for current session
+export PATH="$HOME/.local/bin:$PATH"
 
 # -----------------------------------------------------------------------------
 # Done
@@ -303,8 +331,12 @@ echo "Look for the microphone icon in your menu bar."
 echo
 echo "To restart after quitting:"
 echo "  - Search 'Hanasu' in Spotlight (Cmd+Space)"
-echo "  - Or run: hanasu run"
+echo "  - Or run: hanasu"
 echo
+if [[ "$PATH_ADDED" == "true" ]]; then
+    echo "NOTE: Run 'source ~/.zshrc' or open a new terminal for CLI."
+    echo
+fi
 echo "To uninstall:"
 echo "  ~/.hanasu/src/scripts/uninstall.sh"
 echo "========================================="
