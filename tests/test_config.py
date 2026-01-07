@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from hanasu.config import (
+    MODEL_INFO,
+    VALID_MODELS,
     Config,
     ConfigValidationError,
     load_config,
@@ -341,3 +343,23 @@ class TestLastOutputDir:
             saved = json.load(f)
 
         assert saved["last_output_dir"] is None
+
+
+class TestModelInfo:
+    """Test MODEL_INFO constant for model metadata."""
+
+    def test_model_info_contains_all_valid_models(self):
+        """MODEL_INFO should have entries for all models in VALID_MODELS."""
+        for model in VALID_MODELS:
+            assert model in MODEL_INFO, f"MODEL_INFO missing entry for '{model}'"
+
+    def test_model_info_has_size_and_label(self):
+        """Each MODEL_INFO entry should have 'size' and 'label' keys."""
+        for model, info in MODEL_INFO.items():
+            assert "size" in info, f"MODEL_INFO['{model}'] missing 'size'"
+            assert "label" in info, f"MODEL_INFO['{model}'] missing 'label'"
+
+    def test_model_info_label_contains_model_name(self):
+        """Each label should contain the model name for user clarity."""
+        for model, info in MODEL_INFO.items():
+            assert model in info["label"], f"Label for '{model}' should contain model name"

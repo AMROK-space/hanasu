@@ -21,6 +21,7 @@ from AppKit import (
 from Foundation import NSURL, NSArray, NSDefaultRunLoopMode, NSObject
 from PyObjCTools import AppHelper
 
+from hanasu.config import MODEL_INFO
 from hanasu.hotkey import parse_hotkey
 
 if TYPE_CHECKING:
@@ -48,6 +49,13 @@ class MenuBarApp(NSObject):
         self._update_status = None
         self._is_recording = False
         self._hotkey_display = "?"
+
+        # Model selection state
+        self._current_model = "small"
+        self._model_menu_items: dict[str, NSMenuItem] = {}
+        self._is_model_cached_fn = None
+        self._downloading_models: set[str] = set()
+        self._model_submenu = None
 
         return self
 
@@ -86,6 +94,12 @@ class MenuBarApp(NSObject):
         )
         transcribe_item.setTarget_(self)
         menu.addItem_(transcribe_item)
+
+        # Model submenu
+        model_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Model", None, "")
+        model_submenu = self._createModelSubmenu()
+        model_menu_item.setSubmenu_(model_submenu)
+        menu.addItem_(model_menu_item)
 
         # Separator
         menu.addItem_(NSMenuItem.separatorItem())
@@ -263,6 +277,149 @@ class MenuBarApp(NSObject):
             self._callbacks["on_quit"]()
         NSApplication.sharedApplication().terminate_(None)
 
+    def menuWillOpen_(self, menu):
+        """Called when a menu is about to open (NSMenuDelegate).
+
+        Refreshes model cache states when the model submenu is opened.
+        """
+        if menu == self._model_submenu:
+            self.refreshModelStates()
+
+    @objc.python_method
+    def _createModelSubmenu(self) -> NSMenu:
+        """Create the model selection submenu."""
+        submenu = NSMenu.alloc().init()
+
+        # Set delegate for menuWillOpen notification
+        submenu.setDelegate_(self)
+
+        # Model order for consistent display
+        model_order = ["tiny", "base", "small", "medium", "large"]
+
+        for model in model_order:
+            info = MODEL_INFO.get(model, {"label": model})
+            title = self._formatModelTitle(model, info)
+
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, "selectModel:", "")
+            item.setTarget_(self)
+            item.setRepresentedObject_(model)
+            submenu.addItem_(item)
+            self._model_menu_items[model] = item
+
+        # Store reference for delegate
+        self._model_submenu = submenu
+
+        return submenu
+
+    @objc.python_method
+    def _formatModelTitle(self, model: str, info: dict) -> str:
+        """Format the title for a model menu item.
+
+        Args:
+            model: Model name (e.g., "small").
+            info: MODEL_INFO dict entry with 'label' etc.
+
+        Returns:
+            Formatted title like "● ✓ small (244MB, balanced)".
+        """
+        is_current = model == self._current_model
+        is_cached = self._is_model_cached_fn(model) if self._is_model_cached_fn else False
+        is_downloading = model in self._downloading_models
+
+        if is_downloading:
+            return f"  ⏳ {info.get('label', model)} (downloading...)"
+
+        indicator = "● " if is_current else "  "
+        cache_icon = "✓ " if is_cached else "↓ "
+        return f"{indicator}{cache_icon}{info.get('label', model)}"
+
+    def selectModel_(self, sender):
+        """Handle model selection from submenu."""
+        model = sender.representedObject()
+        if not model:
+            return
+
+        # Check if model is cached
+        is_cached = self._is_model_cached_fn(model) if self._is_model_cached_fn else False
+
+        if not is_cached:
+            # Show confirmation dialog for non-cached model
+            info = MODEL_INFO.get(model, {})
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(f"Download {model} model?")
+            alert.setInformativeText_(
+                f"This will download approximately {info.get('size', 'unknown')}.\n"
+                "The download will happen in the background."
+            )
+            alert.addButtonWithTitle_("Download")
+            alert.addButtonWithTitle_("Cancel")
+
+            response = alert.runModal()
+            if response != 1000:  # Cancel clicked
+                return
+
+        if self._callbacks.get("on_model_change"):
+            self._callbacks["on_model_change"](model)
+
+    def setCurrentModel_(self, model: str):
+        """Update current model indicator (thread-safe).
+
+        Args:
+            model: The new current model name.
+        """
+        self._pending_current_model = model
+        self.performSelectorOnMainThread_withObject_waitUntilDone_("applyCurrentModel", None, False)
+
+    def applyCurrentModel(self):
+        """Apply current model indicator on main thread."""
+        new_model = getattr(self, "_pending_current_model", None)
+        if not new_model:
+            return
+
+        self._current_model = new_model
+        self.refreshModelStates()
+
+    @objc.python_method
+    def setModelDownloading_(self, model: str, downloading: bool):
+        """Update downloading state for a model (thread-safe).
+
+        Args:
+            model: Model name.
+            downloading: True if download in progress, False when complete.
+        """
+        self._pending_download_state = (model, downloading)
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "applyDownloadState", None, False
+        )
+
+    def applyDownloadState(self):
+        """Apply download state on main thread."""
+        state = getattr(self, "_pending_download_state", None)
+        if not state:
+            return
+        model, downloading = state
+
+        if downloading:
+            self._downloading_models.add(model)
+        else:
+            self._downloading_models.discard(model)
+
+        # Update the specific menu item
+        if model in self._model_menu_items:
+            item = self._model_menu_items[model]
+            info = MODEL_INFO.get(model, {"label": model})
+            title = self._formatModelTitle(model, info)
+            item.setTitle_(title)
+            item.setEnabled_(not downloading)
+
+    @objc.python_method
+    def refreshModelStates(self):
+        """Refresh all model menu item titles based on current state."""
+        for model, item in self._model_menu_items.items():
+            info = MODEL_INFO.get(model, {"label": model})
+            title = self._formatModelTitle(model, info)
+            item.setTitle_(title)
+
 
 def validate_hotkey(hotkey_str: str, timeout: float = 5.0) -> bool:
     """Validate a hotkey by waiting for user to press it.
@@ -363,7 +520,10 @@ def run_menubar_app(
     on_hotkey_change: Callable[[str], None] | None = None,
     on_update: Callable[[], None] | None = None,
     on_transcribe_file: Callable[[], None] | None = None,
+    on_model_change: Callable[[str], None] | None = None,
     version: str = "",
+    current_model: str = "small",
+    is_model_cached: Callable[[str], bool] | None = None,
 ) -> MenuBarApp:
     """Create and run the menu bar app.
 
@@ -373,7 +533,10 @@ def run_menubar_app(
         on_hotkey_change: Callback when user changes hotkey (receives new hotkey string).
         on_update: Callback when user triggers update from menu.
         on_transcribe_file: Callback when user selects transcribe file from menu.
+        on_model_change: Callback when user selects a different model.
         version: Current app version to display.
+        current_model: Currently selected model name.
+        is_model_cached: Function to check if a model is downloaded.
 
     Returns:
         MenuBarApp instance for updating state.
@@ -387,9 +550,12 @@ def run_menubar_app(
             "on_hotkey_change": on_hotkey_change,
             "on_update": on_update,
             "on_transcribe_file": on_transcribe_file,
+            "on_model_change": on_model_change,
         }
     )
     delegate.setHotkey_(hotkey)
+    delegate._current_model = current_model
+    delegate._is_model_cached_fn = is_model_cached
     delegate.setupStatusBar(version=version)
 
     return delegate

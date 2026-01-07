@@ -9,6 +9,7 @@ from hanasu.main import (
     Hanasu,
     extract_audio_from_video,
     get_status,
+    is_model_cached,
     is_video_file,
     run_setup,
     run_transcribe,
@@ -559,28 +560,492 @@ class TestRunTranscribeVideo:
                     assert str(audio_file) in call_args
 
 
-class TestOnTranscribeFile:
-    """Test file transcription menu handler."""
+class TestIsModelCached:
+    """Test model cache detection."""
 
-    def _create_hanasu_with_mocks(self, tmp_path: Path):
-        """Helper to create Hanasu instance with mocked dependencies."""
+    def test_returns_true_when_cache_directory_exists(self, tmp_path: Path):
+        """Returns True when model cache directory exists."""
+        # Create mock cache structure
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        model_cache = cache_dir / "models--mlx-community--whisper-small-mlx"
+        model_cache.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("small")
+
+        assert result is True
+
+    def test_returns_false_when_cache_directory_missing(self, tmp_path: Path):
+        """Returns False when model cache directory does not exist."""
+        # Create cache base but not the model directory
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("medium")
+
+        assert result is False
+
+    def test_constructs_correct_cache_path_for_each_model(self, tmp_path: Path):
+        """Constructs the correct HuggingFace cache path for each model size."""
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir.mkdir(parents=True)
+
+        # Test that large model uses v3 suffix
+        large_cache = cache_dir / "models--mlx-community--whisper-large-v3-mlx"
+        large_cache.mkdir()
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("large")
+
+        assert result is True
+
+    def test_defaults_to_small_for_unknown_model(self, tmp_path: Path):
+        """Falls back to small model path for unknown model names."""
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        small_cache = cache_dir / "models--mlx-community--whisper-small-mlx"
+        small_cache.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("nonexistent-model")
+
+        assert result is True
+
+
+class TestChangeModel:
+    """Test model hot-swap functionality."""
+
+    def test_change_model_creates_new_transcriber(self, tmp_path: Path):
+        """Changing model creates a new Transcriber instance with new model."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+
+                                    # Change to medium model
+                                    app.change_model("medium")
+
+                                    # Wait for background thread to complete
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    # Verify Transcriber was created with new model
+                                    assert mock_transcriber_class.call_count == 2
+                                    second_call = mock_transcriber_class.call_args_list[1]
+                                    assert second_call[1]["model"] == "medium"
+
+    def test_change_model_saves_config(self, tmp_path: Path):
+        """Changing model persists the new model to config file."""
         with patch("hanasu.main.load_config") as mock_config:
             with patch("hanasu.main.load_dictionary") as mock_dict:
                 with patch("hanasu.main.Recorder"):
                     with patch("hanasu.main.Transcriber"):
                         with patch("hanasu.main.HotkeyListener"):
-                            mock_config.return_value = MagicMock(
-                                hotkey="ctrl+shift+space",
-                                model="small",
-                                language="en",
-                                audio_device=None,
-                                debug=False,
-                                clear_clipboard=False,
-                                last_output_dir=None,
-                            )
-                            mock_dict.return_value = MagicMock(terms=[], replacements={})
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config") as mock_save:
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
 
-                            return Hanasu(config_dir=tmp_path)
+                                    app = Hanasu(config_dir=tmp_path)
+                                    mock_save.reset_mock()
+
+                                    app.change_model("medium")
+
+                                    # Wait for background thread
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    mock_save.assert_called_once()
+                                    saved_config = mock_save.call_args[0][0]
+                                    assert saved_config.model == "medium"
+
+    def test_change_model_blocked_while_recording(self, tmp_path: Path):
+        """Model change is blocked while recording is in progress."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config") as mock_save:
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app._recording = True
+
+                                    initial_call_count = mock_transcriber_class.call_count
+                                    mock_save.reset_mock()
+
+                                    app.change_model("medium")
+
+                                    # Wait a bit to ensure nothing happened
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    # Transcriber should NOT have been recreated
+                                    assert mock_transcriber_class.call_count == initial_call_count
+                                    # Config should NOT have been saved
+                                    mock_save.assert_not_called()
+
+    def test_change_model_downloads_uncached_model(self, tmp_path: Path):
+        """Model change downloads uncached model before switching."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=False):
+                                with patch("hanasu.main.save_config"):
+                                    with patch("hanasu.main.download_model") as mock_download:
+                                        mock_config.return_value = MagicMock(
+                                            hotkey="ctrl+shift+space",
+                                            model="small",
+                                            language="en",
+                                            audio_device=None,
+                                            debug=False,
+                                            clear_clipboard=False,
+                                        )
+                                        mock_dict.return_value = MagicMock(
+                                            terms=[], replacements={}
+                                        )
+
+                                        app = Hanasu(config_dir=tmp_path)
+
+                                        app.change_model("large")
+
+                                        # Wait for background thread
+                                        import time
+
+                                        time.sleep(0.1)
+
+                                        mock_download.assert_called_once_with("large")
+
+    def test_change_model_same_model_does_nothing(self, tmp_path: Path):
+        """Changing to the same model is a no-op."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.save_config") as mock_save:
+                                mock_config.return_value = MagicMock(
+                                    hotkey="ctrl+shift+space",
+                                    model="small",
+                                    language="en",
+                                    audio_device=None,
+                                    debug=False,
+                                    clear_clipboard=False,
+                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                app = Hanasu(config_dir=tmp_path)
+                                initial_call_count = mock_transcriber_class.call_count
+                                mock_save.reset_mock()
+
+                                # Try to change to same model
+                                app.change_model("small")
+
+                                import time
+
+                                time.sleep(0.1)
+
+                                # Should not create new transcriber or save
+                                assert mock_transcriber_class.call_count == initial_call_count
+                                mock_save.assert_not_called()
+
+    def test_change_model_invalid_model_does_nothing(self, tmp_path: Path):
+        """Changing to an invalid model is a no-op."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.save_config") as mock_save:
+                                mock_config.return_value = MagicMock(
+                                    hotkey="ctrl+shift+space",
+                                    model="small",
+                                    language="en",
+                                    audio_device=None,
+                                    debug=False,
+                                    clear_clipboard=False,
+                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                app = Hanasu(config_dir=tmp_path)
+                                initial_call_count = mock_transcriber_class.call_count
+                                mock_save.reset_mock()
+
+                                # Try to change to invalid model
+                                app.change_model("nonexistent")
+
+                                import time
+
+                                time.sleep(0.1)
+
+                                # Should not create new transcriber or save
+                                assert mock_transcriber_class.call_count == initial_call_count
+                                mock_save.assert_not_called()
+
+    def test_change_model_blocked_while_change_in_progress(self, tmp_path: Path):
+        """Model change is blocked while another change is in progress."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config") as mock_save:
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(
+                                        terms=[], replacements={}
+                                    )
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    # Simulate a model change already in progress
+                                    app._model_change_in_progress = True
+
+                                    initial_call_count = mock_transcriber_class.call_count
+                                    mock_save.reset_mock()
+
+                                    app.change_model("medium")
+
+                                    # Should not start new change
+                                    assert mock_transcriber_class.call_count == initial_call_count
+                                    mock_save.assert_not_called()
+
+    def test_change_model_updates_menubar(self, tmp_path: Path):
+        """Changing model updates the menu bar state."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    mock_menubar = MagicMock()
+                                    app._menubar_app = mock_menubar
+
+                                    app.change_model("medium")
+
+                                    # Wait for background thread
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    mock_menubar.setCurrentModel_.assert_called_with("medium")
+                                    mock_menubar.refreshModelStates.assert_called()
+
+
+class TestMenubarWiring:
+    """Test wiring between Hanasu and MenuBar for model selection."""
+
+    def test_run_passes_model_callbacks_to_menubar(self, tmp_path: Path):
+        """Hanasu.run() passes model callbacks to run_menubar_app."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener:
+                            with patch("hanasu.main.run_menubar_app") as mock_menubar_app:
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+                                    mock_listener_instance = MagicMock()
+                                    mock_listener.return_value = mock_listener_instance
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app.run()
+
+                                    # Verify run_menubar_app was called with model params
+                                    mock_menubar_app.assert_called_once()
+                                    call_kwargs = mock_menubar_app.call_args[1]
+
+                                    assert "on_model_change" in call_kwargs
+                                    assert "current_model" in call_kwargs
+                                    assert "is_model_cached" in call_kwargs
+                                    assert call_kwargs["current_model"] == "small"
+
+    def test_on_model_change_callback_calls_change_model(self, tmp_path: Path):
+        """Model change callback from menubar triggers change_model."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.run_menubar_app") as mock_menubar_app:
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app.change_model = MagicMock()
+                                    app.run()
+
+                                    # Get the callback that was passed
+                                    call_kwargs = mock_menubar_app.call_args[1]
+                                    on_model_change = call_kwargs["on_model_change"]
+
+                                    # Simulate menubar calling back
+                                    on_model_change("medium")
+
+                                    # Verify change_model was called
+                                    app.change_model.assert_called_once_with("medium")
+
+
+class TestRunTranscribeFileOutput:
+    """Test file output option for transcribe command."""
+
+    def test_outputs_to_stdout_by_default(self, tmp_path: Path, capsys):
+        """When no output file specified, result goes to stdout."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Hello world",
+                    "segments": [],
+                }
+
+                run_transcribe(str(audio_file))
+
+                captured = capsys.readouterr()
+                assert "Hello world" in captured.out
+
+    def test_writes_plain_text_to_file(self, tmp_path: Path, capsys):
+        """When output file specified, plain text written to file not stdout."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+        output_file = tmp_path / "output.txt"
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Hello from file",
+                    "segments": [],
+                }
+
+                run_transcribe(str(audio_file), output_file=str(output_file))
+
+                # Output should be in file
+                assert output_file.exists()
+                assert "Hello from file" in output_file.read_text()
+
+                # Stdout should be empty
+                captured = capsys.readouterr()
+                assert captured.out == ""
+
+    def test_writes_vtt_format_to_file(self, tmp_path: Path, capsys):
+        """When output file and VTT flag specified, VTT written to file."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+        output_file = tmp_path / "output.vtt"
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Full text",
+                    "segments": [
+                        {"start": 0.0, "end": 2.5, "text": " Hello world"},
+                        {"start": 2.5, "end": 5.0, "text": " Goodbye"},
+                    ],
+                }
+
+                run_transcribe(str(audio_file), use_vtt=True, output_file=str(output_file))
+
+                # Output should be in file with VTT format
+                content = output_file.read_text()
+                assert "WEBVTT" in content
+                assert "00:00:00.000 --> 00:00:02.500" in content
+                assert "Hello world" in content
+
+                # Stdout should be empty
+                captured = capsys.readouterr()
+                assert captured.out == ""
+
+    def test_raises_error_when_parent_dir_missing(self, tmp_path: Path):
+        """When output file's parent directory doesn't exist, raises error."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+        output_file = tmp_path / "nonexistent" / "subdir" / "output.txt"
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Hello",
+                    "segments": [],
+                }
+
+                with pytest.raises(FileNotFoundError):
+                    run_transcribe(str(audio_file), output_file=str(output_file))
+
+
+class TestOnTranscribeFile:
+    """Test file transcription menu handler."""
 
     def test_on_transcribe_file_method_exists(self, tmp_path: Path):
         """Hanasu class has _on_transcribe_file method."""
@@ -694,182 +1159,6 @@ class TestOnTranscribeFile:
 
                                     mock_format.assert_called_once()
 
-    def test_returns_early_if_format_picker_cancelled(self, tmp_path: Path):
-        """Does nothing if user cancels format picker."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("hanasu.main.open_file_picker") as mock_file_picker:
-                                with patch("hanasu.main.show_format_picker") as mock_format:
-                                    with patch("hanasu.main.save_file_picker") as mock_save:
-                                        mock_config.return_value = MagicMock(
-                                            hotkey="ctrl+shift+space",
-                                            model="small",
-                                            language="en",
-                                            audio_device=None,
-                                            debug=False,
-                                            clear_clipboard=False,
-                                            last_output_dir=None,
-                                        )
-                                        mock_dict.return_value = MagicMock(
-                                            terms=[], replacements={}
-                                        )
-                                        mock_file_picker.return_value = "/path/to/audio.mp3"
-                                        mock_format.return_value = None  # User cancelled
-
-                                        app = Hanasu(config_dir=tmp_path)
-                                        app._on_transcribe_file()
-
-                                        # Save picker should not be called
-                                        mock_save.assert_not_called()
-
-    def test_calls_save_picker_with_suggested_name(self, tmp_path: Path):
-        """Save picker uses input filename as suggested name."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("hanasu.main.open_file_picker") as mock_file_picker:
-                                with patch("hanasu.main.show_format_picker") as mock_format:
-                                    with patch("hanasu.main.save_file_picker") as mock_save:
-                                        mock_config.return_value = MagicMock(
-                                            hotkey="ctrl+shift+space",
-                                            model="small",
-                                            language="en",
-                                            audio_device=None,
-                                            debug=False,
-                                            clear_clipboard=False,
-                                            last_output_dir=None,
-                                        )
-                                        mock_dict.return_value = MagicMock(
-                                            terms=[], replacements={}
-                                        )
-                                        mock_file_picker.return_value = "/path/to/interview.mp3"
-                                        mock_format.return_value = "txt"
-                                        mock_save.return_value = None
-
-                                        app = Hanasu(config_dir=tmp_path)
-                                        app._on_transcribe_file()
-
-                                        mock_save.assert_called_once()
-                                        call_kwargs = mock_save.call_args[1]
-                                        assert call_kwargs["suggested_name"] == "interview.txt"
-
-    def test_save_picker_uses_last_output_dir(self, tmp_path: Path):
-        """Save picker opens in last used directory."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("hanasu.main.open_file_picker") as mock_file_picker:
-                                with patch("hanasu.main.show_format_picker") as mock_format:
-                                    with patch("hanasu.main.save_file_picker") as mock_save:
-                                        mock_config.return_value = MagicMock(
-                                            hotkey="ctrl+shift+space",
-                                            model="small",
-                                            language="en",
-                                            audio_device=None,
-                                            debug=False,
-                                            clear_clipboard=False,
-                                            last_output_dir="/Users/test/transcripts",
-                                        )
-                                        mock_dict.return_value = MagicMock(
-                                            terms=[], replacements={}
-                                        )
-                                        mock_file_picker.return_value = "/path/to/audio.mp3"
-                                        mock_format.return_value = "txt"
-                                        mock_save.return_value = None
-
-                                        app = Hanasu(config_dir=tmp_path)
-                                        app._on_transcribe_file()
-
-                                        call_kwargs = mock_save.call_args[1]
-                                        assert (
-                                            call_kwargs["initial_dir"] == "/Users/test/transcripts"
-                                        )
-
-    def test_updates_last_output_dir_after_save(self, tmp_path: Path):
-        """Saves new output directory to config."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("hanasu.main.open_file_picker") as mock_file_picker:
-                                with patch("hanasu.main.show_format_picker") as mock_format:
-                                    with patch("hanasu.main.save_file_picker") as mock_save:
-                                        with patch("hanasu.main.save_config") as mock_save_cfg:
-                                            with patch("threading.Thread"):
-                                                mock_cfg_obj = MagicMock(
-                                                    hotkey="ctrl+shift+space",
-                                                    model="small",
-                                                    language="en",
-                                                    audio_device=None,
-                                                    debug=False,
-                                                    clear_clipboard=False,
-                                                    last_output_dir=None,
-                                                )
-                                                mock_config.return_value = mock_cfg_obj
-                                                mock_dict.return_value = MagicMock(
-                                                    terms=[], replacements={}
-                                                )
-                                                mock_file_picker.return_value = "/path/to/audio.mp3"
-                                                mock_format.return_value = "txt"
-                                                mock_save.return_value = (
-                                                    "/Users/test/new_dir/output.txt"
-                                                )
-
-                                                app = Hanasu(config_dir=tmp_path)
-                                                app._on_transcribe_file()
-
-                                                # Config should be updated
-                                                assert (
-                                                    mock_cfg_obj.last_output_dir
-                                                    == "/Users/test/new_dir"
-                                                )
-                                                mock_save_cfg.assert_called()
-
-    def test_starts_transcription_in_background_thread(self, tmp_path: Path):
-        """Transcription runs in background thread."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("hanasu.main.open_file_picker") as mock_file_picker:
-                                with patch("hanasu.main.show_format_picker") as mock_format:
-                                    with patch("hanasu.main.save_file_picker") as mock_save:
-                                        with patch("hanasu.main.save_config"):
-                                            with patch("threading.Thread") as mock_thread_class:
-                                                mock_config.return_value = MagicMock(
-                                                    hotkey="ctrl+shift+space",
-                                                    model="small",
-                                                    language="en",
-                                                    audio_device=None,
-                                                    debug=False,
-                                                    clear_clipboard=False,
-                                                    last_output_dir=None,
-                                                )
-                                                mock_dict.return_value = MagicMock(
-                                                    terms=[], replacements={}
-                                                )
-                                                mock_file_picker.return_value = "/path/to/audio.mp3"
-                                                mock_format.return_value = "txt"
-                                                mock_save.return_value = "/output/file.txt"
-                                                mock_thread = MagicMock()
-                                                mock_thread_class.return_value = mock_thread
-
-                                                app = Hanasu(config_dir=tmp_path)
-                                                app._on_transcribe_file()
-
-                                                # Thread should be created and started
-                                                mock_thread_class.assert_called_once()
-                                                mock_thread.start.assert_called_once()
-
 
 class TestRunFileTranscription:
     """Test background file transcription."""
@@ -930,119 +1219,6 @@ class TestRunFileTranscription:
 
                                     assert output_file.exists()
                                     assert output_file.read_text() == "Hello world"
-
-    def test_writes_vtt_output(self, tmp_path: Path):
-        """Writes transcription as VTT when use_vtt is True."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("mlx_whisper.transcribe") as mock_transcribe:
-                                with patch("hanasu.main.is_video_file", return_value=False):
-                                    mock_config.return_value = MagicMock(
-                                        hotkey="ctrl+shift+space",
-                                        model="small",
-                                        language="en",
-                                        audio_device=None,
-                                        debug=False,
-                                        clear_clipboard=False,
-                                        last_output_dir=None,
-                                    )
-                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                    mock_transcribe.return_value = {
-                                        "text": "Hello world",
-                                        "segments": [
-                                            {"start": 0.0, "end": 1.5, "text": " Hello"},
-                                            {"start": 1.5, "end": 3.0, "text": " world"},
-                                        ],
-                                    }
-
-                                    app = Hanasu(config_dir=tmp_path)
-                                    output_file = tmp_path / "output.vtt"
-
-                                    app._run_file_transcription(
-                                        "/path/to/audio.mp3", str(output_file), True
-                                    )
-
-                                    assert output_file.exists()
-                                    content = output_file.read_text()
-                                    assert content.startswith("WEBVTT")
-                                    assert "00:00:00.000 --> 00:00:01.500" in content
-                                    assert "Hello" in content
-
-    def test_extracts_audio_from_video_files(self, tmp_path: Path):
-        """Extracts audio from video before transcribing."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("mlx_whisper.transcribe") as mock_transcribe:
-                                with patch("hanasu.main.is_video_file", return_value=True):
-                                    with patch(
-                                        "hanasu.main.extract_audio_from_video"
-                                    ) as mock_extract:
-                                        mock_config.return_value = MagicMock(
-                                            hotkey="ctrl+shift+space",
-                                            model="small",
-                                            language="en",
-                                            audio_device=None,
-                                            debug=False,
-                                            clear_clipboard=False,
-                                            last_output_dir=None,
-                                        )
-                                        mock_dict.return_value = MagicMock(
-                                            terms=[], replacements={}
-                                        )
-                                        temp_audio = tmp_path / "temp.wav"
-                                        temp_audio.touch()
-                                        mock_extract.return_value = str(temp_audio)
-                                        mock_transcribe.return_value = {
-                                            "text": "Video text",
-                                            "segments": [],
-                                        }
-
-                                        app = Hanasu(config_dir=tmp_path)
-                                        output_file = tmp_path / "output.txt"
-
-                                        app._run_file_transcription(
-                                            "/path/to/video.mp4", str(output_file), False
-                                        )
-
-                                        mock_extract.assert_called_once_with("/path/to/video.mp4")
-
-    def test_calls_error_handler_on_failure(self, tmp_path: Path):
-        """Calls _show_transcription_error on failure."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("mlx_whisper.transcribe") as mock_transcribe:
-                                with patch("hanasu.main.is_video_file", return_value=False):
-                                    mock_config.return_value = MagicMock(
-                                        hotkey="ctrl+shift+space",
-                                        model="small",
-                                        language="en",
-                                        audio_device=None,
-                                        debug=False,
-                                        clear_clipboard=False,
-                                        last_output_dir=None,
-                                    )
-                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                    mock_transcribe.side_effect = Exception("Transcription failed")
-
-                                    app = Hanasu(config_dir=tmp_path)
-                                    app._show_transcription_error = MagicMock()
-
-                                    app._run_file_transcription(
-                                        "/path/to/audio.mp3",
-                                        str(tmp_path / "output.txt"),
-                                        False,
-                                    )
-
-                                    app._show_transcription_error.assert_called_once()
 
 
 class TestShowTranscriptionError:

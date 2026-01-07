@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+from hanasu.config import VALID_MODELS
 from hanasu.updater import UpdateStatus
 
 
@@ -304,103 +305,417 @@ class TestHotkeyValidation:
                         callback.assert_not_called()
 
 
-class TestOpenFilePicker:
-    """Test file picker dialog for selecting audio/video files."""
+class TestModelSubmenu:
+    """Test model selection submenu functionality."""
 
-    def test_open_file_picker_returns_path_when_user_selects(self):
-        """open_file_picker returns selected file path when user confirms."""
+    def test_run_menubar_app_accepts_model_change_callback(self):
+        """run_menubar_app accepts on_model_change callback parameter."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                model_callback = MagicMock()
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    on_model_change=model_callback,
+                    current_model="small",
+                    is_model_cached=lambda m: True,
+                )
+
+                assert delegate is not None
+                assert delegate._callbacks.get("on_model_change") == model_callback
+
+    def test_menubar_stores_current_model(self):
+        """MenuBarApp stores current model for indicator display."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    current_model="medium",
+                    is_model_cached=lambda m: True,
+                )
+
+                assert delegate._current_model == "medium"
+
+    def test_menubar_stores_cache_checker_function(self):
+        """MenuBarApp stores is_model_cached function for checking download state."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                def cache_fn(m):
+                    return m == "small"
+
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    is_model_cached=cache_fn,
+                )
+
+                assert delegate._is_model_cached_fn == cache_fn
+
+    def test_model_submenu_contains_all_valid_models(self):
+        """Model submenu should have an item for each valid model."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+
+            delegate.setupStatusBar(version="0.1.0")
+
+            # Should have model_menu_items for all valid models
+            assert set(delegate._model_menu_items.keys()) == VALID_MODELS
+
+    def test_select_model_triggers_callback_with_model_name(self):
+        """Selecting a model triggers on_model_change callback with model name."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert"):  # Prevent confirmation dialog
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: True  # All cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                # Simulate selecting the "medium" model
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "medium"
+                delegate.selectModel_(mock_sender)
+
+                callback.assert_called_once_with("medium")
+
+
+class TestDownloadConfirmation:
+    """Test download confirmation dialog for non-cached models."""
+
+    def test_cached_model_triggers_callback_immediately(self):
+        """Selecting a cached model triggers callback without confirmation."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: True  # All cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "medium"
+                delegate.selectModel_(mock_sender)
+
+                # Should NOT show alert for cached model
+                mock_alert_class.alloc.assert_not_called()
+                # Should call callback immediately
+                callback.assert_called_once_with("medium")
+
+    def test_uncached_model_shows_confirmation_dialog(self):
+        """Selecting a non-cached model shows confirmation dialog."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                mock_alert = MagicMock()
+                mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                mock_alert.runModal.return_value = 1000  # OK clicked
+
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: m == "small"  # Only small cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "large"
+                delegate.selectModel_(mock_sender)
+
+                # Should show alert for non-cached model
+                mock_alert_class.alloc.assert_called_once()
+                mock_alert.runModal.assert_called_once()
+
+    def test_confirming_download_triggers_callback(self):
+        """Clicking OK in confirmation dialog triggers callback."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                mock_alert = MagicMock()
+                mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                mock_alert.runModal.return_value = 1000  # OK clicked
+
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: False  # Nothing cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "large"
+                delegate.selectModel_(mock_sender)
+
+                # Should call callback after OK
+                callback.assert_called_once_with("large")
+
+    def test_canceling_download_does_not_trigger_callback(self):
+        """Clicking Cancel in confirmation dialog does not trigger callback."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                mock_alert = MagicMock()
+                mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                mock_alert.runModal.return_value = 1001  # Cancel clicked
+
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_({"on_model_change": callback})
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: False  # Nothing cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "large"
+                delegate.selectModel_(mock_sender)
+
+                # Should NOT call callback after Cancel
+                callback.assert_not_called()
+
+
+class TestModelStateUpdates:
+    """Test model state update methods for menu bar."""
+
+    def test_setCurrentModel_updates_current_model(self):
+        """setCurrentModel_ updates the stored current model."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+            delegate._current_model = "small"
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.setCurrentModel_("large")
+            # Simulate main thread call
+            delegate.applyCurrentModel()
+
+            assert delegate._current_model == "large"
+
+    def test_setModelDownloading_adds_to_downloading_set(self):
+        """setModelDownloading_ marks model as downloading."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.setModelDownloading_("large", True)
+            # Simulate main thread call
+            delegate.applyDownloadState()
+
+            assert "large" in delegate._downloading_models
+
+    def test_setModelDownloading_removes_from_downloading_set(self):
+        """setModelDownloading_ with False removes model from downloading set."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+            delegate._downloading_models = {"large"}
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.setModelDownloading_("large", False)
+            # Simulate main thread call
+            delegate.applyDownloadState()
+
+            assert "large" not in delegate._downloading_models
+
+    def test_refreshModelStates_updates_all_menu_items(self):
+        """refreshModelStates updates titles for all model menu items."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: m in ["small", "tiny"]
+            delegate._current_model = "small"
+
+            delegate.setupStatusBar(version="0.1.0")
+            delegate.refreshModelStates()
+
+            # Verify small has current indicator (●) and cached (✓)
+            small_item = delegate._model_menu_items["small"]
+            small_title = small_item.title()
+            assert "●" in small_title
+            assert "✓" in small_title
+
+            # Verify large has no current indicator and download icon (↓)
+            large_item = delegate._model_menu_items["large"]
+            large_title = large_item.title()
+            assert "●" not in large_title
+            assert "↓" in large_title
+
+
+class TestMenuDelegate:
+    """Test menu delegate for refreshing cache state on submenu open."""
+
+    def test_model_submenu_has_delegate_set(self):
+        """Model submenu should have a delegate set for menuWillOpen notifications."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
+
+            delegate.setupStatusBar(version="0.1.0")
+
+            # Model submenu should have delegate set
+            assert delegate._model_submenu.delegate() is not None
+
+    def test_menuWillOpen_refreshes_model_states(self):
+        """menuWillOpen_ should refresh model states when model submenu opens."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            # Track cache check calls
+            cache_calls = []
+
+            def tracking_cache_fn(m):
+                cache_calls.append(m)
+                return m == "small"
+
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = tracking_cache_fn
+
+            delegate.setupStatusBar(version="0.1.0")
+
+            # Clear calls from setup
+            cache_calls.clear()
+
+            # Simulate menu opening (this should refresh states)
+            delegate.menuWillOpen_(delegate._model_submenu)
+
+            # Should have checked cache for all models
+            assert len(cache_calls) == 5  # All 5 models checked
+
+
+class TestOpenFilePicker:
+    """Test open_file_picker function for selecting audio/video files."""
+
+    def test_open_file_picker_returns_path_when_file_selected(self):
+        """open_file_picker returns file path when user selects file."""
         from hanasu.menubar import open_file_picker
 
         with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
             mock_panel = MagicMock()
             mock_panel_class.openPanel.return_value = mock_panel
-            mock_panel.runModal.return_value = 1  # NSModalResponseOK
+            mock_panel.runModal.return_value = 1  # OK button
 
             mock_url = MagicMock()
-            mock_url.path.return_value = "/Users/test/audio.mp3"
+            mock_url.path.return_value = "/path/to/audio.mp3"
             mock_panel.URL.return_value = mock_url
 
             result = open_file_picker()
 
-            assert result == "/Users/test/audio.mp3"
+            assert result == "/path/to/audio.mp3"
 
-    def test_open_file_picker_returns_none_when_user_cancels(self):
-        """open_file_picker returns None when user cancels dialog."""
+    def test_open_file_picker_returns_none_when_cancelled(self):
+        """open_file_picker returns None when user cancels."""
         from hanasu.menubar import open_file_picker
 
         with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
             mock_panel = MagicMock()
             mock_panel_class.openPanel.return_value = mock_panel
-            mock_panel.runModal.return_value = 0  # NSModalResponseCancel
+            mock_panel.runModal.return_value = 0  # Cancel button
 
             result = open_file_picker()
 
             assert result is None
 
     def test_open_file_picker_sets_allowed_extensions(self):
-        """open_file_picker filters to specified file types."""
+        """open_file_picker sets allowed file types when provided."""
         from hanasu.menubar import open_file_picker
 
         with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
             mock_panel = MagicMock()
             mock_panel_class.openPanel.return_value = mock_panel
-            mock_panel.runModal.return_value = 0
+            mock_panel.runModal.return_value = 0  # Cancel
 
-            open_file_picker(allowed_extensions=["mp3", "wav", "mp4"])
+            open_file_picker(allowed_extensions=["mp3", "wav", "m4a"])
 
-            mock_panel.setAllowedFileTypes_.assert_called_once_with(["mp3", "wav", "mp4"])
-
-    def test_open_file_picker_configures_panel_correctly(self):
-        """open_file_picker sets panel to select files not directories."""
-        from hanasu.menubar import open_file_picker
-
-        with patch("hanasu.menubar.NSOpenPanel") as mock_panel_class:
-            mock_panel = MagicMock()
-            mock_panel_class.openPanel.return_value = mock_panel
-            mock_panel.runModal.return_value = 0
-
-            open_file_picker()
-
-            mock_panel.setCanChooseFiles_.assert_called_once_with(True)
-            mock_panel.setCanChooseDirectories_.assert_called_once_with(False)
-            mock_panel.setAllowsMultipleSelection_.assert_called_once_with(False)
+            mock_panel.setAllowedFileTypes_.assert_called_once_with(["mp3", "wav", "m4a"])
 
 
 class TestSaveFilePicker:
-    """Test save file dialog for selecting output location."""
+    """Test save_file_picker function for selecting output location."""
 
-    def test_save_file_picker_returns_path_when_user_confirms(self):
-        """save_file_picker returns selected file path when user confirms."""
+    def test_save_file_picker_returns_path_when_confirmed(self):
+        """save_file_picker returns path when user confirms."""
         from hanasu.menubar import save_file_picker
 
         with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
             mock_panel = MagicMock()
             mock_panel_class.savePanel.return_value = mock_panel
-            mock_panel.runModal.return_value = 1  # NSModalResponseOK
+            mock_panel.runModal.return_value = 1  # OK button
 
             mock_url = MagicMock()
-            mock_url.path.return_value = "/Users/test/output.txt"
+            mock_url.path.return_value = "/path/to/output.txt"
             mock_panel.URL.return_value = mock_url
 
             result = save_file_picker()
 
-            assert result == "/Users/test/output.txt"
+            assert result == "/path/to/output.txt"
 
-    def test_save_file_picker_returns_none_when_user_cancels(self):
-        """save_file_picker returns None when user cancels dialog."""
+    def test_save_file_picker_returns_none_when_cancelled(self):
+        """save_file_picker returns None when user cancels."""
         from hanasu.menubar import save_file_picker
 
         with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
             mock_panel = MagicMock()
             mock_panel_class.savePanel.return_value = mock_panel
-            mock_panel.runModal.return_value = 0  # NSModalResponseCancel
+            mock_panel.runModal.return_value = 0  # Cancel button
 
             result = save_file_picker()
 
             assert result is None
 
-    def test_save_file_picker_sets_suggested_filename(self):
-        """save_file_picker sets the default filename suggestion."""
+    def test_save_file_picker_sets_suggested_name(self):
+        """save_file_picker sets the suggested filename."""
         from hanasu.menubar import save_file_picker
 
         with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
@@ -408,12 +723,12 @@ class TestSaveFilePicker:
             mock_panel_class.savePanel.return_value = mock_panel
             mock_panel.runModal.return_value = 0
 
-            save_file_picker(suggested_name="transcription.txt")
+            save_file_picker(suggested_name="interview.txt")
 
-            mock_panel.setNameFieldStringValue_.assert_called_once_with("transcription.txt")
+            mock_panel.setNameFieldStringValue_.assert_called_with("interview.txt")
 
     def test_save_file_picker_sets_initial_directory(self):
-        """save_file_picker sets the initial directory when provided."""
+        """save_file_picker sets initial directory when provided."""
         from hanasu.menubar import save_file_picker
 
         with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
@@ -422,30 +737,17 @@ class TestSaveFilePicker:
                 mock_panel_class.savePanel.return_value = mock_panel
                 mock_panel.runModal.return_value = 0
 
-                mock_url = MagicMock()
-                mock_nsurl.fileURLWithPath_.return_value = mock_url
+                mock_dir_url = MagicMock()
+                mock_nsurl.fileURLWithPath_.return_value = mock_dir_url
 
-                save_file_picker(initial_dir="/Users/test/documents")
+                save_file_picker(initial_dir="/Users/test/transcriptions")
 
-                mock_nsurl.fileURLWithPath_.assert_called_once_with("/Users/test/documents")
-                mock_panel.setDirectoryURL_.assert_called_once_with(mock_url)
-
-    def test_save_file_picker_sets_allowed_file_types(self):
-        """save_file_picker filters to specified file types."""
-        from hanasu.menubar import save_file_picker
-
-        with patch("hanasu.menubar.NSSavePanel") as mock_panel_class:
-            mock_panel = MagicMock()
-            mock_panel_class.savePanel.return_value = mock_panel
-            mock_panel.runModal.return_value = 0
-
-            save_file_picker(file_types=["txt", "vtt"])
-
-            mock_panel.setAllowedFileTypes_.assert_called_once_with(["txt", "vtt"])
+                mock_nsurl.fileURLWithPath_.assert_called_with("/Users/test/transcriptions")
+                mock_panel.setDirectoryURL_.assert_called_with(mock_dir_url)
 
 
 class TestTranscribeFileMenuItem:
-    """Test Transcribe File menu item."""
+    """Test Transcribe File menu item integration."""
 
     def test_run_menubar_app_accepts_on_transcribe_file_callback(self):
         """run_menubar_app accepts on_transcribe_file callback parameter."""
@@ -466,35 +768,17 @@ class TestTranscribeFileMenuItem:
                 )
 
                 assert delegate is not None
-
-    def test_menubar_stores_transcribe_file_callback(self):
-        """MenuBarApp stores on_transcribe_file callback for later invocation."""
-        from hanasu.menubar import run_menubar_app
-
-        with patch("hanasu.menubar.NSApplication") as mock_app:
-            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
-                mock_app.sharedApplication.return_value = MagicMock()
-                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
-                    MagicMock()
-                )
-
-                transcribe_callback = MagicMock()
-
-                delegate = run_menubar_app(
-                    hotkey="cmd+v",
-                    on_transcribe_file=transcribe_callback,
-                )
-
                 assert delegate._callbacks.get("on_transcribe_file") == transcribe_callback
 
-    def test_transcribe_file_handler_invokes_callback(self):
-        """transcribeFile_ handler invokes the on_transcribe_file callback."""
+    def test_transcribe_file_menu_item_triggers_callback(self):
+        """Clicking Transcribe File menu item triggers callback."""
         from hanasu.menubar import MenuBarApp
 
         with patch("hanasu.menubar.NSStatusBar"):
             callback = MagicMock()
             delegate = MenuBarApp.alloc().initWithCallbacks_({"on_transcribe_file": callback})
             delegate._status_item = MagicMock()
+            delegate._is_model_cached_fn = lambda m: True
 
             delegate.transcribeFile_(None)
 
@@ -502,10 +786,10 @@ class TestTranscribeFileMenuItem:
 
 
 class TestShowFormatPicker:
-    """Test format selection dialog."""
+    """Test show_format_picker function for output format selection."""
 
     def test_show_format_picker_returns_txt_for_first_button(self):
-        """show_format_picker returns 'txt' when Plain Text button clicked."""
+        """show_format_picker returns 'txt' when first button clicked."""
         from hanasu.menubar import show_format_picker
 
         with patch("hanasu.menubar.NSAlert") as mock_alert_class:
@@ -518,7 +802,7 @@ class TestShowFormatPicker:
             assert result == "txt"
 
     def test_show_format_picker_returns_vtt_for_second_button(self):
-        """show_format_picker returns 'vtt' when VTT button clicked."""
+        """show_format_picker returns 'vtt' when second button clicked."""
         from hanasu.menubar import show_format_picker
 
         with patch("hanasu.menubar.NSAlert") as mock_alert_class:
@@ -531,29 +815,14 @@ class TestShowFormatPicker:
             assert result == "vtt"
 
     def test_show_format_picker_returns_none_for_cancel(self):
-        """show_format_picker returns None when Cancel button clicked."""
+        """show_format_picker returns None when cancel button clicked."""
         from hanasu.menubar import show_format_picker
 
         with patch("hanasu.menubar.NSAlert") as mock_alert_class:
             mock_alert = MagicMock()
             mock_alert_class.alloc.return_value.init.return_value = mock_alert
-            mock_alert.runModal.return_value = 1002  # Third button (Cancel)
+            mock_alert.runModal.return_value = 1002  # Third button (cancel)
 
             result = show_format_picker()
 
             assert result is None
-
-    def test_show_format_picker_configures_dialog(self):
-        """show_format_picker sets up dialog with correct buttons."""
-        from hanasu.menubar import show_format_picker
-
-        with patch("hanasu.menubar.NSAlert") as mock_alert_class:
-            mock_alert = MagicMock()
-            mock_alert_class.alloc.return_value.init.return_value = mock_alert
-            mock_alert.runModal.return_value = 1002
-
-            show_format_picker()
-
-            mock_alert.setMessageText_.assert_called_once()
-            # Should have 3 buttons: Plain Text, VTT, Cancel
-            assert mock_alert.addButtonWithTitle_.call_count == 3

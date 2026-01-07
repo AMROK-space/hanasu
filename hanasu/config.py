@@ -16,6 +16,14 @@ class ConfigValidationError(Exception):
 
 VALID_MODELS = {"tiny", "base", "small", "medium", "large"}
 
+MODEL_INFO = {
+    "tiny": {"size": "39MB", "label": "tiny (39MB, fastest)"},
+    "base": {"size": "74MB", "label": "base (74MB, fast)"},
+    "small": {"size": "244MB", "label": "small (244MB, balanced)"},
+    "medium": {"size": "769MB", "label": "medium (769MB, accurate)"},
+    "large": {"size": "1.5GB", "label": "large (1.5GB, best quality)"},
+}
+
 
 @dataclass
 class Config:
