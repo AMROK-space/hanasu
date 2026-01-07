@@ -314,6 +314,25 @@ class MenuBarApp(NSObject):
         if not model:
             return
 
+        # Check if model is cached
+        is_cached = self._is_model_cached_fn(model) if self._is_model_cached_fn else False
+
+        if not is_cached:
+            # Show confirmation dialog for non-cached model
+            info = MODEL_INFO.get(model, {})
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(f"Download {model} model?")
+            alert.setInformativeText_(
+                f"This will download approximately {info.get('size', 'unknown')}.\n"
+                "The download will happen in the background."
+            )
+            alert.addButtonWithTitle_("Download")
+            alert.addButtonWithTitle_("Cancel")
+
+            response = alert.runModal()
+            if response != 1000:  # Cancel clicked
+                return
+
         if self._callbacks.get("on_model_change"):
             self._callbacks["on_model_change"](model)
 

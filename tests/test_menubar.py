@@ -406,3 +406,114 @@ class TestModelSubmenu:
                 delegate.selectModel_(mock_sender)
 
                 callback.assert_called_once_with("medium")
+
+
+class TestDownloadConfirmation:
+    """Test download confirmation dialog for non-cached models."""
+
+    def test_cached_model_triggers_callback_immediately(self):
+        """Selecting a cached model triggers callback without confirmation."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_(
+                    {"on_model_change": callback}
+                )
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: True  # All cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "medium"
+                delegate.selectModel_(mock_sender)
+
+                # Should NOT show alert for cached model
+                mock_alert_class.alloc.assert_not_called()
+                # Should call callback immediately
+                callback.assert_called_once_with("medium")
+
+    def test_uncached_model_shows_confirmation_dialog(self):
+        """Selecting a non-cached model shows confirmation dialog."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                mock_alert = MagicMock()
+                mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                mock_alert.runModal.return_value = 1000  # OK clicked
+
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_(
+                    {"on_model_change": callback}
+                )
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: m == "small"  # Only small cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "large"
+                delegate.selectModel_(mock_sender)
+
+                # Should show alert for non-cached model
+                mock_alert_class.alloc.assert_called_once()
+                mock_alert.runModal.assert_called_once()
+
+    def test_confirming_download_triggers_callback(self):
+        """Clicking OK in confirmation dialog triggers callback."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                mock_alert = MagicMock()
+                mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                mock_alert.runModal.return_value = 1000  # OK clicked
+
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_(
+                    {"on_model_change": callback}
+                )
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: False  # Nothing cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "large"
+                delegate.selectModel_(mock_sender)
+
+                # Should call callback after OK
+                callback.assert_called_once_with("large")
+
+    def test_canceling_download_does_not_trigger_callback(self):
+        """Clicking Cancel in confirmation dialog does not trigger callback."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                mock_alert = MagicMock()
+                mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                mock_alert.runModal.return_value = 1001  # Cancel clicked
+
+                callback = MagicMock()
+                delegate = MenuBarApp.alloc().initWithCallbacks_(
+                    {"on_model_change": callback}
+                )
+                delegate._status_item = MagicMock()
+                delegate._is_model_cached_fn = lambda m: False  # Nothing cached
+                delegate._current_model = "small"
+
+                delegate.setupStatusBar(version="0.1.0")
+
+                mock_sender = MagicMock()
+                mock_sender.representedObject.return_value = "large"
+                delegate.selectModel_(mock_sender)
+
+                # Should NOT call callback after Cancel
+                callback.assert_not_called()
