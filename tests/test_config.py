@@ -232,6 +232,7 @@ class TestSaveConfig:
             audio_device=None,
             debug=False,
             clear_clipboard=False,
+            last_output_dir=None,
         )
 
         save_config(config, config_dir=tmp_path)
@@ -253,6 +254,7 @@ class TestSaveConfig:
             audio_device="AirPods",
             debug=True,
             clear_clipboard=True,
+            last_output_dir="/some/path",
         )
 
         save_config(config, config_dir=tmp_path)
@@ -277,12 +279,70 @@ class TestSaveConfig:
             audio_device=None,
             debug=False,
             clear_clipboard=False,
+            last_output_dir=None,
         )
 
         save_config(config, config_dir=config_dir)
 
         assert config_dir.exists()
         assert (config_dir / "config.json").exists()
+
+
+class TestLastOutputDir:
+    """Test last_output_dir config field for file transcription."""
+
+    def test_default_last_output_dir_is_none(self, tmp_path: Path):
+        """Default last_output_dir is None when no config exists."""
+        config = load_config(config_dir=tmp_path)
+
+        assert config.last_output_dir is None
+
+    def test_loads_last_output_dir_from_file(self, tmp_path: Path):
+        """last_output_dir is loaded from config file."""
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({"last_output_dir": "/Users/test/transcriptions"}))
+
+        config = load_config(config_dir=tmp_path)
+
+        assert config.last_output_dir == "/Users/test/transcriptions"
+
+    def test_saves_last_output_dir_to_file(self, tmp_path: Path):
+        """save_config writes last_output_dir to config.json."""
+        config = Config(
+            hotkey="cmd+alt+v",
+            model="small",
+            language="en",
+            audio_device=None,
+            debug=False,
+            clear_clipboard=False,
+            last_output_dir="/Users/test/output",
+        )
+
+        save_config(config, config_dir=tmp_path)
+
+        with open(tmp_path / "config.json") as f:
+            saved = json.load(f)
+
+        assert saved["last_output_dir"] == "/Users/test/output"
+
+    def test_last_output_dir_none_saved_as_null(self, tmp_path: Path):
+        """last_output_dir=None is saved as JSON null."""
+        config = Config(
+            hotkey="cmd+alt+v",
+            model="small",
+            language="en",
+            audio_device=None,
+            debug=False,
+            clear_clipboard=False,
+            last_output_dir=None,
+        )
+
+        save_config(config, config_dir=tmp_path)
+
+        with open(tmp_path / "config.json") as f:
+            saved = json.load(f)
+
+        assert saved["last_output_dir"] is None
 
 
 class TestModelInfo:

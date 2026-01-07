@@ -10,6 +10,7 @@ Local voice-to-text dictation for macOS using Whisper. By [AMROK](https://amrok.
 - **Fast** - Uses Apple Silicon MLX for hardware-accelerated inference
 - **Simple** - Hold a hotkey to record, release to type
 - **Menu bar app** - Always accessible, easy to quit/restart
+- **File transcription** - Transcribe existing audio/video files via menu or CLI
 
 ## Requirements
 
@@ -36,7 +37,25 @@ This installs to `~/.hanasu/` and sets up:
 After installation, Hanasu runs in your menu bar:
 - **Microphone icon (🎤)** - Ready, waiting for hotkey
 - **Red circle (🔴)** - Recording in progress
-- **Click the icon** - See hotkey, change hotkey, check for updates, or quit
+- **Click the icon** - See hotkey, change hotkey, transcribe files, check for updates, or quit
+
+### Menu Bar Options
+
+- **Hotkey** - Shows current hotkey for push-to-talk
+- **Change Hotkey...** - Opens dialog to set a new hotkey
+- **Transcribe File...** - Opens file picker to transcribe audio/video files (see below)
+- **Version / Update** - Shows current version and update status
+- **Quit** - Stops Hanasu
+
+### Transcribe File (Menu)
+
+Select "Transcribe File..." from the menu to transcribe existing audio or video files:
+
+1. Select an audio/video file (mp3, wav, m4a, mp4, mov, mkv, avi, webm)
+2. Choose output format: Plain Text (.txt) or VTT Subtitles (.vtt)
+3. Choose save location
+
+Transcription runs in the background using the configured Whisper model. The last used output directory is remembered.
 
 **Default hotkey:** `Cmd+Option+V` (hold to record, release to type)
 
@@ -55,7 +74,8 @@ Edit `~/.hanasu/config.json`:
   "language": "en",
   "audio_device": null,
   "debug": false,
-  "clear_clipboard": false
+  "clear_clipboard": false,
+  "last_output_dir": null
 }
 ```
 
@@ -67,6 +87,7 @@ Edit `~/.hanasu/config.json`:
 - **audio_device**: Specific microphone name, or `null` for system default
 - **debug**: Enable verbose logging (logs transcribed text to `~/.hanasu/hanasu.log`)
 - **clear_clipboard**: Clear clipboard after pasting transcribed text
+- **last_output_dir**: Remembered directory for file transcription saves (auto-updated)
 
 ## Custom Dictionary
 
@@ -103,7 +124,7 @@ hanasu doctor       # Check installation health
 hanasu transcribe <file> [--vtt] [--large] [-o FILE]  # Transcribe audio or video file
 ```
 
-### Transcribe Command
+### Transcribe Command (CLI)
 
 Transcribe audio files directly or extract and transcribe audio from video files:
 

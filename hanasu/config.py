@@ -35,6 +35,7 @@ class Config:
     audio_device: str | None
     debug: bool
     clear_clipboard: bool
+    last_output_dir: str | None
 
 
 @dataclass
@@ -52,6 +53,7 @@ DEFAULT_CONFIG = {
     "audio_device": None,
     "debug": False,
     "clear_clipboard": False,
+    "last_output_dir": None,
 }
 
 
@@ -93,6 +95,7 @@ def load_config(config_dir: Path) -> Config:
         audio_device=config_data["audio_device"],
         debug=config_data["debug"],
         clear_clipboard=config_data["clear_clipboard"],
+        last_output_dir=config_data["last_output_dir"],
     )
 
 
@@ -129,6 +132,7 @@ def save_config(config: Config, config_dir: Path) -> None:
         "audio_device": config.audio_device,
         "debug": config.debug,
         "clear_clipboard": config.clear_clipboard,
+        "last_output_dir": config.last_output_dir,
     }
 
     with open(config_file, "w") as f:
