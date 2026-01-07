@@ -557,3 +557,91 @@ class TestRunTranscribeVideo:
                     mock_transcribe.assert_called_once()
                     call_args = mock_transcribe.call_args[0]
                     assert str(audio_file) in call_args
+
+
+class TestRunTranscribeFileOutput:
+    """Test file output option for transcribe command."""
+
+    def test_outputs_to_stdout_by_default(self, tmp_path: Path, capsys):
+        """When no output file specified, result goes to stdout."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Hello world",
+                    "segments": [],
+                }
+
+                run_transcribe(str(audio_file))
+
+                captured = capsys.readouterr()
+                assert "Hello world" in captured.out
+
+    def test_writes_plain_text_to_file(self, tmp_path: Path, capsys):
+        """When output file specified, plain text written to file not stdout."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+        output_file = tmp_path / "output.txt"
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Hello from file",
+                    "segments": [],
+                }
+
+                run_transcribe(str(audio_file), output_file=str(output_file))
+
+                # Output should be in file
+                assert output_file.exists()
+                assert "Hello from file" in output_file.read_text()
+
+                # Stdout should be empty
+                captured = capsys.readouterr()
+                assert captured.out == ""
+
+    def test_writes_vtt_format_to_file(self, tmp_path: Path, capsys):
+        """When output file and VTT flag specified, VTT written to file."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+        output_file = tmp_path / "output.vtt"
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Full text",
+                    "segments": [
+                        {"start": 0.0, "end": 2.5, "text": " Hello world"},
+                        {"start": 2.5, "end": 5.0, "text": " Goodbye"},
+                    ],
+                }
+
+                run_transcribe(str(audio_file), use_vtt=True, output_file=str(output_file))
+
+                # Output should be in file with VTT format
+                content = output_file.read_text()
+                assert "WEBVTT" in content
+                assert "00:00:00.000 --> 00:00:02.500" in content
+                assert "Hello world" in content
+
+                # Stdout should be empty
+                captured = capsys.readouterr()
+                assert captured.out == ""
+
+    def test_raises_error_when_parent_dir_missing(self, tmp_path: Path):
+        """When output file's parent directory doesn't exist, raises error."""
+        audio_file = tmp_path / "audio.wav"
+        audio_file.touch()
+        output_file = tmp_path / "nonexistent" / "subdir" / "output.txt"
+
+        with patch("hanasu.main.is_video_file", return_value=False):
+            with patch("mlx_whisper.transcribe") as mock_transcribe:
+                mock_transcribe.return_value = {
+                    "text": "Hello",
+                    "segments": [],
+                }
+
+                with pytest.raises(FileNotFoundError):
+                    run_transcribe(str(audio_file), output_file=str(output_file))
