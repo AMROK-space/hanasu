@@ -1,5 +1,6 @@
 """Tests for main orchestration and CLI."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +8,7 @@ import pytest
 
 from hanasu.main import (
     Hanasu,
+    ensure_homebrew_in_path,
     extract_audio_from_video,
     get_status,
     is_model_cached,
@@ -1333,3 +1335,59 @@ class TestShowTranscriptionError:
 
                             assert hasattr(app, "_show_transcription_error")
                             assert callable(app._show_transcription_error)
+
+
+class TestEnsureHomebrewInPath:
+    """Test PATH configuration for macOS GUI apps."""
+
+    def test_adds_homebrew_apple_silicon_to_path(self, monkeypatch):
+        """Adds /opt/homebrew/bin to PATH if not present."""
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+        ensure_homebrew_in_path()
+
+        assert "/opt/homebrew/bin" in os.environ["PATH"]
+
+    def test_adds_homebrew_intel_to_path(self, monkeypatch):
+        """Adds /usr/local/bin to PATH if not present."""
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+        ensure_homebrew_in_path()
+
+        assert "/usr/local/bin" in os.environ["PATH"]
+
+    def test_does_not_duplicate_if_already_present(self, monkeypatch):
+        """Does not add paths that are already in PATH."""
+        original_path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        monkeypatch.setenv("PATH", original_path)
+
+        ensure_homebrew_in_path()
+
+        # Should not have duplicates
+        path_parts = os.environ["PATH"].split(":")
+        assert path_parts.count("/opt/homebrew/bin") == 1
+        assert path_parts.count("/usr/local/bin") == 1
+
+    def test_prepends_to_path(self, monkeypatch):
+        """Homebrew paths are prepended so they take precedence."""
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+        ensure_homebrew_in_path()
+
+        path_parts = os.environ["PATH"].split(":")
+        # Homebrew paths should come before /usr/bin
+        homebrew_idx = min(
+            path_parts.index("/opt/homebrew/bin") if "/opt/homebrew/bin" in path_parts else 999,
+            path_parts.index("/usr/local/bin") if "/usr/local/bin" in path_parts else 999,
+        )
+        usr_bin_idx = path_parts.index("/usr/bin")
+        assert homebrew_idx < usr_bin_idx
+
+    def test_handles_empty_path(self, monkeypatch):
+        """Works when PATH is empty (fresh GUI app context)."""
+        monkeypatch.delenv("PATH", raising=False)
+
+        ensure_homebrew_in_path()
+
+        assert "/opt/homebrew/bin" in os.environ["PATH"]
+        assert "/usr/local/bin" in os.environ["PATH"]

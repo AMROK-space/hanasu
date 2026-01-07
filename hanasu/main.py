@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -32,6 +33,30 @@ from hanasu.transcriber import Transcriber
 from hanasu.updater import check_for_update
 
 DEFAULT_CONFIG_DIR = Path.home() / ".hanasu"
+
+# Homebrew paths for macOS - GUI apps don't inherit shell PATH
+HOMEBREW_PATHS = [
+    "/opt/homebrew/bin",  # Apple Silicon
+    "/usr/local/bin",  # Intel Mac
+]
+
+
+def ensure_homebrew_in_path() -> None:
+    """Add Homebrew paths to PATH for macOS GUI apps.
+
+    macOS GUI apps launched from Finder/Spotlight don't inherit the shell's PATH,
+    so tools like ffmpeg installed via Homebrew won't be found. This function
+    adds common Homebrew paths to PATH so subprocess calls can find them.
+    """
+    current_path = os.environ.get("PATH", "")
+    path_parts = current_path.split(":") if current_path else []
+
+    # Prepend Homebrew paths that aren't already present
+    paths_to_add = [p for p in HOMEBREW_PATHS if p not in path_parts]
+
+    if paths_to_add:
+        new_path = ":".join(paths_to_add + path_parts)
+        os.environ["PATH"] = new_path
 
 
 class Hanasu:
@@ -1074,6 +1099,9 @@ def run_transcribe(
 
 def main() -> None:
     """Main entry point for CLI."""
+    # Ensure Homebrew paths are in PATH for GUI app context
+    ensure_homebrew_in_path()
+
     parser = argparse.ArgumentParser(
         prog="hanasu",
         description="Local voice-to-text dictation for macOS. By AMROK.",
