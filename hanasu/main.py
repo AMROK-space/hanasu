@@ -568,6 +568,13 @@ def run_update() -> None:
 
     print("Updating Hanasu...")
 
+    # Reset auto-generated files that might block pull
+    subprocess.run(
+        ["git", "checkout", "--", "uv.lock"],
+        cwd=source_dir,
+        capture_output=True,
+    )
+
     # Pull latest code
     print("Pulling latest changes...")
     result = subprocess.run(
