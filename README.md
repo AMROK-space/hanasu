@@ -22,13 +22,10 @@ Local voice-to-text dictation for macOS using Whisper. By [AMROK](https://amrok.
 curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash
 ```
 
-Or clone and install manually (recommended if you want to review the code first):
-
-```bash
-git clone https://github.com/amrok-space/hanasu.git
-cd hanasu
-./scripts/install.sh
-```
+This installs to `~/.hanasu/` and sets up:
+- Auto-start on login (LaunchAgent)
+- Spotlight integration (/Applications/Hanasu.app)
+- CLI command (`hanasu`)
 
 **Important:** Grant Accessibility permission when prompted:
 - System Settings → Privacy & Security → Accessibility
@@ -45,7 +42,7 @@ After installation, Hanasu runs in your menu bar:
 
 To restart after quitting:
 - Search "Hanasu" in Spotlight (Cmd+Space)
-- Or open from /Applications
+- Or run: `hanasu`
 
 ## Configuration
 
@@ -88,17 +85,44 @@ Add custom terms and replacements in `~/.hanasu/dictionary.json`:
 ## Uninstall
 
 ```bash
-./scripts/uninstall.sh
+~/.hanasu/src/scripts/uninstall.sh
 ```
 
-Or manually:
+Options:
+- `--yes` - Skip confirmation prompts
+- `--keep-config` - Preserve config.json
+
+## CLI Commands
+
 ```bash
-rm -rf /Applications/Hanasu.app
-rm ~/Library/LaunchAgents/com.amrok.hanasu.plist
-rm -rf ~/.hanasu
+hanasu              # Start the app (normally auto-starts on login)
+hanasu --status     # Show configuration and status
+hanasu setup        # Run first-time setup
+hanasu update       # Update to latest version
+hanasu doctor       # Check installation health
+hanasu transcribe <file> [--vtt] [--large]  # Transcribe audio file
+```
+
+## Development
+
+For development, clone and run directly (does not install system-wide):
+
+```bash
+git clone https://github.com/amrok-space/hanasu.git
+cd hanasu
+uv sync
+uv run hanasu
 ```
 
 ## Troubleshooting
+
+### Check installation health
+
+```bash
+hanasu doctor
+```
+
+This verifies all components are correctly installed and configured.
 
 ### "Accessibility permission not granted"
 1. Open System Settings → Privacy & Security → Accessibility

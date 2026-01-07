@@ -325,12 +325,19 @@ def run_update() -> None:
         FileNotFoundError: If source directory doesn't exist.
         RuntimeError: If git or uv commands fail.
     """
-    source_dir = Path.home() / ".hanasu-src"
+    # New canonical location
+    source_dir = Path.home() / ".hanasu" / "src"
 
+    # Fall back to legacy location if new doesn't exist
     if not source_dir.exists():
-        raise FileNotFoundError(
-            f"Source directory not found: {source_dir}\nPlease reinstall using the install script."
-        )
+        legacy_dir = Path.home() / ".hanasu-src"
+        if legacy_dir.exists():
+            source_dir = legacy_dir
+        else:
+            raise FileNotFoundError(
+                "Source directory not found.\n"
+                "Please reinstall: curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
+            )
 
     print("Updating Hanasu...")
 
@@ -508,6 +515,169 @@ def print_status(config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
         print("  No input devices found")
 
 
+def run_doctor() -> None:
+    """Check installation health and report issues.
+
+    Verifies:
+    - Install manifest exists and is valid
+    - All artifacts exist and are correct
+    - LaunchAgent is properly configured
+    - No conflicting installations
+    """
+    install_dir = Path.home() / ".hanasu"
+    manifest_file = install_dir / ".install-manifest"
+    legacy_dir = Path.home() / ".hanasu-src"
+    plist_path = Path.home() / "Library" / "LaunchAgents" / "com.amrok.hanasu.plist"
+    app_path = Path("/Applications/Hanasu.app")
+    cli_link = Path.home() / ".local" / "bin" / "hanasu"
+    venv_bin = install_dir / ".venv" / "bin" / "hanasu"
+
+    issues = []
+    warnings = []
+
+    print(f"Hanasu Doctor v{__version__}")
+    print("=" * 40)
+    print()
+
+    # Check install manifest
+    print("Checking installation...")
+    if manifest_file.exists():
+        print(f"  ✓ Install manifest: {manifest_file}")
+        try:
+            import json
+            with open(manifest_file) as f:
+                manifest = json.load(f)
+            print(f"    Installed: {manifest.get('installed_at', 'unknown')}")
+        except Exception as e:
+            issues.append(f"Manifest is corrupt: {e}")
+    else:
+        warnings.append("No install manifest found (may be legacy install)")
+
+    # Check source directory
+    src_dir = install_dir / "src"
+    if src_dir.exists():
+        print(f"  ✓ Source: {src_dir}")
+        if (src_dir / ".git").exists():
+            print("    Git repository: OK")
+        else:
+            issues.append("Source directory is not a git repository")
+    else:
+        issues.append(f"Source directory missing: {src_dir}")
+
+    # Check virtual environment
+    if venv_bin.exists():
+        print(f"  ✓ Virtual environment: {install_dir / '.venv'}")
+    else:
+        issues.append(f"Virtual environment missing or incomplete: {install_dir / '.venv'}")
+
+    # Check LaunchAgent
+    print()
+    print("Checking LaunchAgent...")
+    if plist_path.exists():
+        print(f"  ✓ Plist: {plist_path}")
+
+        # Check what it points to
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["plutil", "-extract", "ProgramArguments.0", "raw", str(plist_path)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                target = result.stdout.strip()
+                print(f"    Points to: {target}")
+                if not Path(target).exists():
+                    issues.append(f"LaunchAgent points to missing file: {target}")
+                elif str(venv_bin) not in target and str(install_dir) not in target:
+                    warnings.append(f"LaunchAgent points outside install dir: {target}")
+        except Exception:
+            pass
+
+        # Check if loaded
+        result = subprocess.run(
+            ["launchctl", "list", "com.amrok.hanasu"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            print("    Status: Loaded")
+        else:
+            print("    Status: Not loaded")
+    else:
+        issues.append(f"LaunchAgent missing: {plist_path}")
+
+    # Check application bundle
+    print()
+    print("Checking application bundle...")
+    if app_path.exists():
+        print(f"  ✓ App: {app_path}")
+        launcher = app_path / "Contents" / "MacOS" / "hanasu"
+        if launcher.exists():
+            try:
+                content = launcher.read_text()
+                if str(install_dir) in content:
+                    print("    Launcher: OK")
+                else:
+                    warnings.append("App launcher may point to wrong location")
+            except Exception:
+                pass
+    else:
+        issues.append(f"Application bundle missing: {app_path}")
+
+    # Check CLI symlink
+    print()
+    print("Checking CLI...")
+    if cli_link.exists():
+        if cli_link.is_symlink():
+            target = cli_link.resolve()
+            print(f"  ✓ Symlink: {cli_link} -> {target}")
+            if not target.exists():
+                issues.append(f"CLI symlink points to missing target: {target}")
+        else:
+            warnings.append(f"CLI is a file, not symlink: {cli_link}")
+    else:
+        issues.append(f"CLI symlink missing: {cli_link}")
+
+    # Check for legacy installation
+    print()
+    print("Checking for conflicts...")
+    if legacy_dir.exists():
+        warnings.append(f"Legacy installation found: {legacy_dir}")
+        print(f"  ! Legacy install: {legacy_dir}")
+    else:
+        print("  ✓ No legacy installation")
+
+    # Check accessibility
+    print()
+    print("Checking permissions...")
+    if check_accessibility():
+        print("  ✓ Accessibility permission: Granted")
+    else:
+        issues.append("Accessibility permission not granted")
+
+    # Summary
+    print()
+    print("=" * 40)
+
+    if issues:
+        print(f"Found {len(issues)} issue(s):")
+        for issue in issues:
+            print(f"  ✗ {issue}")
+
+    if warnings:
+        print(f"Found {len(warnings)} warning(s):")
+        for warning in warnings:
+            print(f"  ! {warning}")
+
+    if not issues and not warnings:
+        print("✓ Installation is healthy")
+    elif issues:
+        print()
+        print("To fix, try reinstalling:")
+        print("  curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash")
+
+
 def run_transcribe(audio_file: str, use_vtt: bool = False, use_large: bool = False) -> None:
     """Transcribe an audio file to text or VTT format.
 
@@ -568,6 +738,9 @@ def main() -> None:
     # update command
     subparsers.add_parser("update", help="Update to latest version")
 
+    # doctor command
+    subparsers.add_parser("doctor", help="Check installation health")
+
     # transcribe command
     transcribe_parser = subparsers.add_parser("transcribe", help="Transcribe an audio file to text")
     transcribe_parser.add_argument("audio_file", help="Path to audio file")
@@ -588,6 +761,8 @@ def main() -> None:
         except (FileNotFoundError, RuntimeError) as e:
             print(f"Error: {e}")
             sys.exit(1)
+    elif args.command == "doctor":
+        run_doctor()
     elif args.command == "transcribe":
         run_transcribe(args.audio_file, use_vtt=args.vtt, use_large=args.large)
     elif args.status:

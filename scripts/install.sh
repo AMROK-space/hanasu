@@ -1,143 +1,52 @@
 #!/bin/bash
-# Install script for Hanasu - by AMROK
+# Hanasu install script (developer guard)
+#
+# This script exists to catch developers who run ./scripts/install.sh from
+# a development checkout. The canonical installer is the bootstrap script
+# at the repo root, which should be run via curl | bash.
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
-PLIST_NAME="com.amrok.hanasu.plist"
-APP_NAME="Hanasu.app"
-APP_PATH="/Applications/$APP_NAME"
+CANONICAL_SRC="$HOME/.hanasu/src"
 
-echo "Hanasu Installer"
-echo "================"
-echo "Local voice-to-text dictation for macOS"
-echo "By AMROK (https://amrok.space)"
-echo
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
 
-# Check for uv
-if ! command -v uv &> /dev/null; then
-    echo "Installing uv package manager..."
-    # Pin to specific version for reproducibility
-    curl -LsSf https://astral.sh/uv/0.9.18/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
+error() { echo -e "${RED}Error:${NC} $1" >&2; }
+info() { echo -e "${GREEN}==>${NC} $1"; }
+
+# Check if we're running from the canonical install location
+if [[ "$PROJECT_DIR" == "$CANONICAL_SRC" ]]; then
+    # We're in the installed location - run the bootstrap installer
+    info "Running from installed location, delegating to bootstrap installer..."
+    exec "$PROJECT_DIR/install.sh"
 fi
 
-# Navigate to project directory
-cd "$PROJECT_DIR"
+# We're in a development checkout
+if [[ -d "$PROJECT_DIR/.git" ]]; then
+    error "This appears to be a development checkout at:"
+    echo "  $PROJECT_DIR"
+    echo
+    echo "For development, run manually:"
+    echo "  cd $PROJECT_DIR"
+    echo "  uv sync"
+    echo "  uv run hanasu run"
+    echo
+    echo "For system install (auto-start, Spotlight, CLI):"
+    echo "  curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
+    echo
+    echo "This installs to ~/.hanasu/ and sets up:"
+    echo "  - Auto-start on login (LaunchAgent)"
+    echo "  - Spotlight integration (/Applications/Hanasu.app)"
+    echo "  - CLI command (hanasu)"
+    exit 1
+fi
 
-# Sync dependencies
-echo "Installing dependencies..."
-uv sync --no-editable
-
-# Run setup
-echo
-echo "Running first-time setup..."
-uv run hanasu setup
-
-# Create LaunchAgent
-echo
-echo "Setting up auto-start..."
-mkdir -p "$LAUNCH_AGENT_DIR"
-
-cat > "$LAUNCH_AGENT_DIR/$PLIST_NAME" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.amrok.hanasu</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$PROJECT_DIR/.venv/bin/hanasu</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>$HOME/.hanasu/hanasu.log</string>
-    <key>StandardErrorPath</key>
-    <string>$HOME/.hanasu/hanasu.log</string>
-</dict>
-</plist>
-EOF
-
-echo "Created LaunchAgent: $LAUNCH_AGENT_DIR/$PLIST_NAME"
-
-# Load the LaunchAgent
-launchctl load "$LAUNCH_AGENT_DIR/$PLIST_NAME" 2>/dev/null || true
-
-# Create .app bundle for Spotlight access
-echo
-echo "Creating application bundle..."
-rm -rf "$APP_PATH"
-mkdir -p "$APP_PATH/Contents/MacOS"
-mkdir -p "$APP_PATH/Contents/Resources"
-
-# Create Info.plist
-cat > "$APP_PATH/Contents/Info.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>hanasu</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.amrok.hanasu</string>
-    <key>CFBundleName</key>
-    <string>Hanasu</string>
-    <key>CFBundleDisplayName</key>
-    <string>Hanasu</string>
-    <key>CFBundleVersion</key>
-    <string>0.1.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
-    <key>LSUIElement</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-# Create launcher script
-cat > "$APP_PATH/Contents/MacOS/hanasu" << EOF
-#!/bin/bash
-exec "$PROJECT_DIR/.venv/bin/hanasu"
-EOF
-chmod +x "$APP_PATH/Contents/MacOS/hanasu"
-
-echo "Created: $APP_PATH"
-
-# Create symlink for CLI access
-echo
-echo "Setting up command-line access..."
-mkdir -p "$HOME/.local/bin"
-ln -sf "$PROJECT_DIR/.venv/bin/hanasu" "$HOME/.local/bin/hanasu"
-echo "Created: $HOME/.local/bin/hanasu"
-
-echo
-echo "========================================="
-echo "Installation complete!"
-echo
-echo "IMPORTANT: Grant Accessibility permission"
-echo "  System Settings -> Privacy & Security -> Accessibility"
-echo "  Enable access for Terminal or Python"
-echo
-echo "Hanasu will start automatically on login."
-echo "Look for the microphone icon in your menu bar."
-echo "Click it to see status or quit."
-echo
-echo "To restart after quitting:"
-echo "  - Search 'Hanasu' in Spotlight (Cmd+Space)"
-echo "  - Or open from /Applications"
-echo
-echo "CLI commands available:"
-echo "  hanasu run      - Start the app"
-echo "  hanasu update   - Update to latest version"
-echo "  hanasu status   - Show current status"
-echo "========================================="
+# Unknown state - shouldn't happen
+error "Cannot determine installation context"
+echo "Please use the bootstrap installer:"
+echo "  curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
+exit 1

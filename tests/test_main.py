@@ -178,7 +178,7 @@ class TestRunUpdate:
     def test_raises_error_when_source_dir_missing(self, tmp_path: Path):
         """Update raises error if source directory doesn't exist."""
         with patch("hanasu.main.Path.home", return_value=tmp_path):
-            with pytest.raises(FileNotFoundError, match="source"):
+            with pytest.raises(FileNotFoundError, match="(?i)source"):
                 run_update()
 
 
