@@ -9,6 +9,7 @@ from hanasu.main import (
     Hanasu,
     extract_audio_from_video,
     get_status,
+    is_model_cached,
     is_video_file,
     run_setup,
     run_transcribe,
@@ -557,6 +558,402 @@ class TestRunTranscribeVideo:
                     mock_transcribe.assert_called_once()
                     call_args = mock_transcribe.call_args[0]
                     assert str(audio_file) in call_args
+
+
+class TestIsModelCached:
+    """Test model cache detection."""
+
+    def test_returns_true_when_cache_directory_exists(self, tmp_path: Path):
+        """Returns True when model cache directory exists."""
+        # Create mock cache structure
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        model_cache = cache_dir / "models--mlx-community--whisper-small-mlx"
+        model_cache.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("small")
+
+        assert result is True
+
+    def test_returns_false_when_cache_directory_missing(self, tmp_path: Path):
+        """Returns False when model cache directory does not exist."""
+        # Create cache base but not the model directory
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("medium")
+
+        assert result is False
+
+    def test_constructs_correct_cache_path_for_each_model(self, tmp_path: Path):
+        """Constructs the correct HuggingFace cache path for each model size."""
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir.mkdir(parents=True)
+
+        # Test that large model uses v3 suffix
+        large_cache = cache_dir / "models--mlx-community--whisper-large-v3-mlx"
+        large_cache.mkdir()
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("large")
+
+        assert result is True
+
+    def test_defaults_to_small_for_unknown_model(self, tmp_path: Path):
+        """Falls back to small model path for unknown model names."""
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        small_cache = cache_dir / "models--mlx-community--whisper-small-mlx"
+        small_cache.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = is_model_cached("nonexistent-model")
+
+        assert result is True
+
+
+class TestChangeModel:
+    """Test model hot-swap functionality."""
+
+    def test_change_model_creates_new_transcriber(self, tmp_path: Path):
+        """Changing model creates a new Transcriber instance with new model."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+
+                                    # Change to medium model
+                                    app.change_model("medium")
+
+                                    # Wait for background thread to complete
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    # Verify Transcriber was created with new model
+                                    assert mock_transcriber_class.call_count == 2
+                                    second_call = mock_transcriber_class.call_args_list[1]
+                                    assert second_call[1]["model"] == "medium"
+
+    def test_change_model_saves_config(self, tmp_path: Path):
+        """Changing model persists the new model to config file."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config") as mock_save:
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    mock_save.reset_mock()
+
+                                    app.change_model("medium")
+
+                                    # Wait for background thread
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    mock_save.assert_called_once()
+                                    saved_config = mock_save.call_args[0][0]
+                                    assert saved_config.model == "medium"
+
+    def test_change_model_blocked_while_recording(self, tmp_path: Path):
+        """Model change is blocked while recording is in progress."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config") as mock_save:
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app._recording = True
+
+                                    initial_call_count = mock_transcriber_class.call_count
+                                    mock_save.reset_mock()
+
+                                    app.change_model("medium")
+
+                                    # Wait a bit to ensure nothing happened
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    # Transcriber should NOT have been recreated
+                                    assert mock_transcriber_class.call_count == initial_call_count
+                                    # Config should NOT have been saved
+                                    mock_save.assert_not_called()
+
+    def test_change_model_downloads_uncached_model(self, tmp_path: Path):
+        """Model change downloads uncached model before switching."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=False):
+                                with patch("hanasu.main.save_config"):
+                                    with patch("hanasu.main.download_model") as mock_download:
+                                        mock_config.return_value = MagicMock(
+                                            hotkey="ctrl+shift+space",
+                                            model="small",
+                                            language="en",
+                                            audio_device=None,
+                                            debug=False,
+                                            clear_clipboard=False,
+                                        )
+                                        mock_dict.return_value = MagicMock(
+                                            terms=[], replacements={}
+                                        )
+
+                                        app = Hanasu(config_dir=tmp_path)
+
+                                        app.change_model("large")
+
+                                        # Wait for background thread
+                                        import time
+
+                                        time.sleep(0.1)
+
+                                        mock_download.assert_called_once_with("large")
+
+    def test_change_model_same_model_does_nothing(self, tmp_path: Path):
+        """Changing to the same model is a no-op."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.save_config") as mock_save:
+                                mock_config.return_value = MagicMock(
+                                    hotkey="ctrl+shift+space",
+                                    model="small",
+                                    language="en",
+                                    audio_device=None,
+                                    debug=False,
+                                    clear_clipboard=False,
+                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                app = Hanasu(config_dir=tmp_path)
+                                initial_call_count = mock_transcriber_class.call_count
+                                mock_save.reset_mock()
+
+                                # Try to change to same model
+                                app.change_model("small")
+
+                                import time
+
+                                time.sleep(0.1)
+
+                                # Should not create new transcriber or save
+                                assert mock_transcriber_class.call_count == initial_call_count
+                                mock_save.assert_not_called()
+
+    def test_change_model_invalid_model_does_nothing(self, tmp_path: Path):
+        """Changing to an invalid model is a no-op."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.save_config") as mock_save:
+                                mock_config.return_value = MagicMock(
+                                    hotkey="ctrl+shift+space",
+                                    model="small",
+                                    language="en",
+                                    audio_device=None,
+                                    debug=False,
+                                    clear_clipboard=False,
+                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                app = Hanasu(config_dir=tmp_path)
+                                initial_call_count = mock_transcriber_class.call_count
+                                mock_save.reset_mock()
+
+                                # Try to change to invalid model
+                                app.change_model("nonexistent")
+
+                                import time
+
+                                time.sleep(0.1)
+
+                                # Should not create new transcriber or save
+                                assert mock_transcriber_class.call_count == initial_call_count
+                                mock_save.assert_not_called()
+
+    def test_change_model_blocked_while_change_in_progress(self, tmp_path: Path):
+        """Model change is blocked while another change is in progress."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config") as mock_save:
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(
+                                        terms=[], replacements={}
+                                    )
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    # Simulate a model change already in progress
+                                    app._model_change_in_progress = True
+
+                                    initial_call_count = mock_transcriber_class.call_count
+                                    mock_save.reset_mock()
+
+                                    app.change_model("medium")
+
+                                    # Should not start new change
+                                    assert mock_transcriber_class.call_count == initial_call_count
+                                    mock_save.assert_not_called()
+
+    def test_change_model_updates_menubar(self, tmp_path: Path):
+        """Changing model updates the menu bar state."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.is_model_cached", return_value=True):
+                                with patch("hanasu.main.save_config"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    mock_menubar = MagicMock()
+                                    app._menubar_app = mock_menubar
+
+                                    app.change_model("medium")
+
+                                    # Wait for background thread
+                                    import time
+
+                                    time.sleep(0.1)
+
+                                    mock_menubar.setCurrentModel_.assert_called_with("medium")
+                                    mock_menubar.refreshModelStates.assert_called()
+
+
+class TestMenubarWiring:
+    """Test wiring between Hanasu and MenuBar for model selection."""
+
+    def test_run_passes_model_callbacks_to_menubar(self, tmp_path: Path):
+        """Hanasu.run() passes model callbacks to run_menubar_app."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener:
+                            with patch("hanasu.main.run_menubar_app") as mock_menubar_app:
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+                                    mock_listener_instance = MagicMock()
+                                    mock_listener.return_value = mock_listener_instance
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app.run()
+
+                                    # Verify run_menubar_app was called with model params
+                                    mock_menubar_app.assert_called_once()
+                                    call_kwargs = mock_menubar_app.call_args[1]
+
+                                    assert "on_model_change" in call_kwargs
+                                    assert "current_model" in call_kwargs
+                                    assert "is_model_cached" in call_kwargs
+                                    assert call_kwargs["current_model"] == "small"
+
+    def test_on_model_change_callback_calls_change_model(self, tmp_path: Path):
+        """Model change callback from menubar triggers change_model."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.run_menubar_app") as mock_menubar_app:
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=False,
+                                        clear_clipboard=False,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                    app = Hanasu(config_dir=tmp_path)
+                                    app.change_model = MagicMock()
+                                    app.run()
+
+                                    # Get the callback that was passed
+                                    call_kwargs = mock_menubar_app.call_args[1]
+                                    on_model_change = call_kwargs["on_model_change"]
+
+                                    # Simulate menubar calling back
+                                    on_model_change("medium")
+
+                                    # Verify change_model was called
+                                    app.change_model.assert_called_once_with("medium")
 
 
 class TestRunTranscribeFileOutput:

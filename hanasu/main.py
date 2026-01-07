@@ -11,6 +11,7 @@ from pathlib import Path
 from hanasu import __version__
 from hanasu.config import (
     DEFAULT_CONFIG,
+    VALID_MODELS,
     Config,
     load_config,
     load_dictionary,
@@ -53,6 +54,7 @@ class Hanasu:
 
         self._recording = False
         self._menubar_app = None
+        self._model_change_in_progress = False
 
         if self.config.debug:
             print(f"[hanasu] Initialized with hotkey: {self.config.hotkey}")
@@ -92,6 +94,80 @@ class Hanasu:
         if self.config.debug:
             print(f"[hanasu] Hotkey changed to: {new_hotkey}")
 
+    def change_model(self, new_model: str) -> None:
+        """Change the whisper model (hot-swap).
+
+        Downloads the model if not cached, then creates a new Transcriber.
+        Runs in a background thread to avoid blocking the UI.
+
+        Args:
+            new_model: Model size (tiny, base, small, medium, large).
+        """
+        # Validate model
+        if new_model not in VALID_MODELS:
+            if self.config.debug:
+                print(f"[hanasu] Invalid model: {new_model}")
+            return
+
+        # No-op if same model
+        if new_model == self.config.model:
+            return
+
+        # Block while recording
+        if self._recording:
+            if self.config.debug:
+                print("[hanasu] Cannot change model while recording")
+            return
+
+        # Prevent concurrent model changes
+        if self._model_change_in_progress:
+            if self.config.debug:
+                print("[hanasu] Model change already in progress")
+            return
+
+        self._model_change_in_progress = True
+
+        def do_change():
+            try:
+                # Download if not cached
+                if not is_model_cached(new_model):
+                    if self._menubar_app:
+                        self._menubar_app.setModelDownloading_(new_model, True)
+                    try:
+                        download_model(new_model)
+                    finally:
+                        if self._menubar_app:
+                            self._menubar_app.setModelDownloading_(new_model, False)
+
+                # Create new transcriber
+                self.transcriber = Transcriber(
+                    model=new_model,
+                    language=self.config.language,
+                )
+
+                # Update config
+                self.config = Config(
+                    hotkey=self.config.hotkey,
+                    model=new_model,
+                    language=self.config.language,
+                    audio_device=self.config.audio_device,
+                    debug=self.config.debug,
+                    clear_clipboard=self.config.clear_clipboard,
+                )
+                save_config(self.config, self.config_dir)
+
+                # Update menu bar
+                if self._menubar_app:
+                    self._menubar_app.setCurrentModel_(new_model)
+                    self._menubar_app.refreshModelStates()
+
+                if self.config.debug:
+                    print(f"[hanasu] Model changed to: {new_model}")
+            finally:
+                self._model_change_in_progress = False
+
+        threading.Thread(target=do_change, daemon=True).start()
+
     def run(self) -> None:
         """Start the daemon and listen for hotkey."""
         print(f"Hanasu v{__version__} running...")
@@ -104,7 +180,10 @@ class Hanasu:
             on_quit=self._on_quit,
             on_hotkey_change=self._on_hotkey_change,
             on_update=self._on_update,
+            on_model_change=self._on_model_change,
             version=__version__,
+            current_model=self.config.model,
+            is_model_cached=is_model_cached,
         )
 
         # Check for updates in background
@@ -165,6 +244,14 @@ class Hanasu:
 
         update_thread = threading.Thread(target=do_update, daemon=True)
         update_thread.start()
+
+    def _on_model_change(self, new_model: str) -> None:
+        """Handle model change from menu bar.
+
+        Args:
+            new_model: New model size to switch to.
+        """
+        self.change_model(new_model)
 
     def _on_quit(self) -> None:
         """Handle quit from menu bar."""
@@ -327,6 +414,23 @@ def download_model(model: str = "small") -> None:
     except Exception as e:
         print(f"Warning: Could not fully verify model: {e}")
         print("Model files should be cached for future use.")
+
+
+def is_model_cached(model: str) -> bool:
+    """Check if a whisper model is cached locally.
+
+    Args:
+        model: Model size (tiny, base, small, medium, large).
+
+    Returns:
+        True if model is cached, False otherwise.
+    """
+    from hanasu.transcriber import MODEL_PATHS
+
+    model_path = MODEL_PATHS.get(model, MODEL_PATHS["small"])
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cache_name = f"models--{model_path.replace('/', '--')}"
+    return (cache_dir / model_cache_name).exists()
 
 
 def run_update() -> None:
@@ -748,13 +852,13 @@ def extract_audio_from_video(video_path: str) -> str:
             capture_output=True,
             text=True,
         )
-    except FileNotFoundError:
+    except FileNotFoundError as err:
         # Clean up temp file before raising
         Path(temp_path).unlink()
         raise RuntimeError(
             "ffmpeg not found. Please install ffmpeg to transcribe video files.\n"
             "Install with: brew install ffmpeg"
-        ) from None
+        ) from err
 
     if result.returncode != 0:
         # Clean up temp file before raising
