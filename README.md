@@ -100,7 +100,30 @@ hanasu --status     # Show configuration and status
 hanasu setup        # Run first-time setup
 hanasu update       # Update to latest version
 hanasu doctor       # Check installation health
-hanasu transcribe <file> [--vtt] [--large]  # Transcribe audio file
+hanasu transcribe <file> [--vtt] [--large]  # Transcribe audio or video file
+```
+
+### Transcribe Command
+
+Transcribe audio files directly or extract and transcribe audio from video files:
+
+```bash
+# Audio files (mp3, wav, m4a, etc.)
+hanasu transcribe recording.m4a
+
+# Video files (mp4, mov, mkv, etc.) - requires ffmpeg
+hanasu transcribe meeting.mp4
+
+# Output as VTT subtitles
+hanasu transcribe video.mp4 --vtt
+
+# Use large model for better accuracy
+hanasu transcribe audio.wav --large
+```
+
+**Video transcription requires ffmpeg.** Install with:
+```bash
+brew install ffmpeg
 ```
 
 ## Development
