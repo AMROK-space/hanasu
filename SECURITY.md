@@ -1,28 +1,16 @@
 # Security Policy
 
-## Supported Versions
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
-
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability in Hanasu, please report it responsibly:
 
 1. **Do not** open a public GitHub issue for security vulnerabilities
-2. Email security concerns to: **security@amrok.space**
+2. Email security concerns to: **info@amrok.space**
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
    - Any suggested fixes (optional)
-
-## Response Timeline
-
-- **Acknowledgment:** Within 48 hours
-- **Initial assessment:** Within 7 days
-- **Resolution timeline:** Communicated after assessment
 
 ## Scope
 
