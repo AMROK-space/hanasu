@@ -421,49 +421,40 @@ class Hanasu:
         ).start()
 
     def _run_file_transcription(self, input_path: str, output_path: str, use_vtt: bool) -> None:
-        """Run file transcription in background thread.
+        """Run file transcription via subprocess to isolate Metal GPU context.
+
+        Using subprocess instead of calling mlx_whisper directly avoids Metal/MLX
+        thread-safety issues that cause crashes with large files when transcription
+        runs in a background thread while the macOS event loop runs on main thread.
 
         Args:
             input_path: Path to audio/video file.
             output_path: Path for output file.
             use_vtt: True to output VTT format, False for plain text.
         """
-        import mlx_whisper
+        # Build command using current Python interpreter
+        cmd = [sys.executable, "-m", "hanasu", "transcribe", input_path, "-o", output_path]
 
-        from hanasu.transcriber import MODEL_PATHS
+        # Add model flag with configured model
+        cmd.extend(["--model", self.config.model])
 
-        model = MODEL_PATHS[self.config.model]
+        # Add VTT flag if requested
+        if use_vtt:
+            cmd.append("--vtt")
 
-        # Handle video files
-        temp_audio_path = None
         try:
-            if is_video_file(input_path):
-                temp_audio_path = extract_audio_from_video(input_path)
-                transcribe_path = temp_audio_path
-            else:
-                transcribe_path = input_path
-
-            result = mlx_whisper.transcribe(transcribe_path, path_or_hf_repo=model)
-
-            with open(output_path, "w") as f:
-                if use_vtt:
-                    f.write("WEBVTT\n\n")
-                    for seg in result["segments"]:
-                        start = seg["start"]
-                        end = seg["end"]
-                        sh, sm, ss = int(start // 3600), int((start % 3600) // 60), start % 60
-                        eh, em, es = int(end // 3600), int((end % 3600) // 60), end % 60
-                        f.write(f"{sh:02d}:{sm:02d}:{ss:06.3f} --> {eh:02d}:{em:02d}:{es:06.3f}\n")
-                        f.write(f"{seg['text'].strip()}\n\n")
-                else:
-                    f.write(result["text"])
-
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minute timeout for large files
+            )
+            if result.returncode != 0:
+                self._show_transcription_error(result.stderr or "Transcription failed")
+        except subprocess.TimeoutExpired:
+            self._show_transcription_error("Transcription timed out (exceeded 10 minutes)")
         except Exception as e:
-            # Show error dialog on main thread
             self._show_transcription_error(str(e))
-        finally:
-            if temp_audio_path and Path(temp_audio_path).exists():
-                Path(temp_audio_path).unlink()
 
     def _show_transcription_error(self, message: str) -> None:
         """Show error dialog on main thread.
@@ -1020,6 +1011,7 @@ def run_transcribe(
     audio_file: str,
     use_vtt: bool = False,
     use_large: bool = False,
+    model: str = "small",
     output_file: str | None = None,
 ) -> None:
     """Transcribe an audio or video file to text or VTT format.
@@ -1027,14 +1019,17 @@ def run_transcribe(
     Args:
         audio_file: Path to audio or video file to transcribe.
         use_vtt: Output in VTT subtitle format with timestamps.
-        use_large: Use large model for better accuracy.
+        use_large: Use large model for better accuracy (overrides --model).
+        model: Model size to use (tiny, base, small, medium, large).
         output_file: Path to write output to. If None, writes to stdout.
     """
     import mlx_whisper
 
     from hanasu.transcriber import MODEL_PATHS
 
-    model = MODEL_PATHS["large"] if use_large else MODEL_PATHS["small"]
+    # --large flag overrides --model for backward compatibility
+    model_key = "large" if use_large else model
+    model_path = MODEL_PATHS[model_key]
 
     # Check if input is a video file
     temp_audio_path = None
@@ -1045,7 +1040,7 @@ def run_transcribe(
         transcribe_path = audio_file
 
     try:
-        result = mlx_whisper.transcribe(transcribe_path, path_or_hf_repo=model)
+        result = mlx_whisper.transcribe(transcribe_path, path_or_hf_repo=model_path)
 
         def write_output(out: typing.TextIO) -> None:
             if use_vtt:
@@ -1116,6 +1111,13 @@ def main() -> None:
         "--large", action="store_true", help="Use large model for better accuracy"
     )
     transcribe_parser.add_argument(
+        "--model",
+        type=str,
+        choices=sorted(VALID_MODELS),
+        default="small",
+        help="Model size to use (default: small)",
+    )
+    transcribe_parser.add_argument(
         "-o",
         "--output",
         type=str,
@@ -1140,6 +1142,7 @@ def main() -> None:
             args.audio_file,
             use_vtt=args.vtt,
             use_large=args.large,
+            model=args.model,
             output_file=args.output,
         )
     elif args.status:
