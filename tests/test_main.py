@@ -1348,216 +1348,209 @@ class TestRunFileTranscription:
 
     def test_uses_subprocess_to_run_transcription(self, tmp_path: Path):
         """Transcription runs via subprocess to isolate Metal GPU context."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("subprocess.run") as mock_run:
-                                mock_config.return_value = MagicMock(
-                                    hotkey="ctrl+shift+space",
-                                    model="small",
-                                    language="en",
-                                    audio_device=None,
-                                    debug=False,
-                                    clear_clipboard=False,
-                                    last_output_dir=None,
-                                )
-                                mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with (
+            patch("hanasu.main.load_config") as mock_config,
+            patch("hanasu.main.load_dictionary") as mock_dict,
+            patch("hanasu.main.Recorder"),
+            patch("hanasu.main.Transcriber"),
+            patch("hanasu.main.HotkeyListener"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_config.return_value = MagicMock(
+                hotkey="ctrl+shift+space",
+                model="small",
+                language="en",
+                audio_device=None,
+                debug=False,
+                clear_clipboard=False,
+                last_output_dir=None,
+            )
+            mock_dict.return_value = MagicMock(terms=[], replacements={})
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
 
-                                app = Hanasu(config_dir=tmp_path)
-                                output_file = tmp_path / "output.txt"
+            app = Hanasu(config_dir=tmp_path)
+            output_file = tmp_path / "output.txt"
 
-                                app._run_file_transcription(
-                                    "/path/to/audio.mp3", str(output_file), False
-                                )
+            app._run_file_transcription("/path/to/audio.mp3", str(output_file), False)
 
-                                # Verify subprocess.run was called
-                                mock_run.assert_called_once()
-                                call_args = mock_run.call_args
-                                cmd = call_args[0][0]
+            # Verify subprocess.run was called
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            cmd = call_args[0][0]
 
-                                # Command should include hanasu transcribe
-                                assert "hanasu" in cmd[1] or cmd[0].endswith("python")
-                                assert "transcribe" in cmd
-                                assert "/path/to/audio.mp3" in cmd
-                                assert "-o" in cmd
-                                assert str(output_file) in cmd
+            # Command should include hanasu transcribe
+            assert "hanasu" in cmd[1] or cmd[0].endswith("python")
+            assert "transcribe" in cmd
+            assert "/path/to/audio.mp3" in cmd
+            assert "-o" in cmd
+            assert str(output_file) in cmd
 
     def test_subprocess_includes_model_flag(self, tmp_path: Path):
         """Subprocess command includes --model flag with configured model."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("subprocess.run") as mock_run:
-                                mock_config.return_value = MagicMock(
-                                    hotkey="ctrl+shift+space",
-                                    model="medium",
-                                    language="en",
-                                    audio_device=None,
-                                    debug=False,
-                                    clear_clipboard=False,
-                                    last_output_dir=None,
-                                )
-                                mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with (
+            patch("hanasu.main.load_config") as mock_config,
+            patch("hanasu.main.load_dictionary") as mock_dict,
+            patch("hanasu.main.Recorder"),
+            patch("hanasu.main.Transcriber"),
+            patch("hanasu.main.HotkeyListener"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_config.return_value = MagicMock(
+                hotkey="ctrl+shift+space",
+                model="medium",
+                language="en",
+                audio_device=None,
+                debug=False,
+                clear_clipboard=False,
+                last_output_dir=None,
+            )
+            mock_dict.return_value = MagicMock(terms=[], replacements={})
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
 
-                                app = Hanasu(config_dir=tmp_path)
-                                output_file = tmp_path / "output.txt"
+            app = Hanasu(config_dir=tmp_path)
+            output_file = tmp_path / "output.txt"
 
-                                app._run_file_transcription(
-                                    "/path/to/audio.mp3", str(output_file), False
-                                )
+            app._run_file_transcription("/path/to/audio.mp3", str(output_file), False)
 
-                                call_args = mock_run.call_args
-                                cmd = call_args[0][0]
+            call_args = mock_run.call_args
+            cmd = call_args[0][0]
 
-                                # Command should include --model medium
-                                assert "--model" in cmd
-                                model_idx = cmd.index("--model")
-                                assert cmd[model_idx + 1] == "medium"
+            # Command should include --model medium
+            assert "--model" in cmd
+            model_idx = cmd.index("--model")
+            assert cmd[model_idx + 1] == "medium"
 
     def test_subprocess_includes_vtt_flag_when_requested(self, tmp_path: Path):
         """Subprocess command includes --vtt flag when VTT format requested."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("subprocess.run") as mock_run:
-                                mock_config.return_value = MagicMock(
-                                    hotkey="ctrl+shift+space",
-                                    model="small",
-                                    language="en",
-                                    audio_device=None,
-                                    debug=False,
-                                    clear_clipboard=False,
-                                    last_output_dir=None,
-                                )
-                                mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with (
+            patch("hanasu.main.load_config") as mock_config,
+            patch("hanasu.main.load_dictionary") as mock_dict,
+            patch("hanasu.main.Recorder"),
+            patch("hanasu.main.Transcriber"),
+            patch("hanasu.main.HotkeyListener"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_config.return_value = MagicMock(
+                hotkey="ctrl+shift+space",
+                model="small",
+                language="en",
+                audio_device=None,
+                debug=False,
+                clear_clipboard=False,
+                last_output_dir=None,
+            )
+            mock_dict.return_value = MagicMock(terms=[], replacements={})
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
 
-                                app = Hanasu(config_dir=tmp_path)
-                                output_file = tmp_path / "output.vtt"
+            app = Hanasu(config_dir=tmp_path)
+            output_file = tmp_path / "output.vtt"
 
-                                app._run_file_transcription(
-                                    "/path/to/audio.mp3", str(output_file), True
-                                )
+            app._run_file_transcription("/path/to/audio.mp3", str(output_file), True)
 
-                                call_args = mock_run.call_args
-                                cmd = call_args[0][0]
+            call_args = mock_run.call_args
+            cmd = call_args[0][0]
 
-                                # Command should include --vtt flag
-                                assert "--vtt" in cmd
+            # Command should include --vtt flag
+            assert "--vtt" in cmd
 
     def test_shows_error_on_subprocess_failure(self, tmp_path: Path):
         """Shows error dialog when subprocess returns non-zero exit code."""
+        with (
+            patch("hanasu.main.load_config") as mock_config,
+            patch("hanasu.main.load_dictionary") as mock_dict,
+            patch("hanasu.main.Recorder"),
+            patch("hanasu.main.Transcriber"),
+            patch("hanasu.main.HotkeyListener"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_config.return_value = MagicMock(
+                hotkey="ctrl+shift+space",
+                model="small",
+                language="en",
+                audio_device=None,
+                debug=False,
+                clear_clipboard=False,
+                last_output_dir=None,
+            )
+            mock_dict.return_value = MagicMock(terms=[], replacements={})
+            mock_run.return_value = MagicMock(returncode=1, stderr="ffmpeg not found")
 
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("subprocess.run") as mock_run:
-                                mock_config.return_value = MagicMock(
-                                    hotkey="ctrl+shift+space",
-                                    model="small",
-                                    language="en",
-                                    audio_device=None,
-                                    debug=False,
-                                    clear_clipboard=False,
-                                    last_output_dir=None,
-                                )
-                                mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                mock_run.return_value = MagicMock(
-                                    returncode=1, stderr="ffmpeg not found"
-                                )
+            app = Hanasu(config_dir=tmp_path)
+            app._show_transcription_error = MagicMock()
+            output_file = tmp_path / "output.txt"
 
-                                app = Hanasu(config_dir=tmp_path)
-                                app._show_transcription_error = MagicMock()
-                                output_file = tmp_path / "output.txt"
+            app._run_file_transcription("/path/to/video.mp4", str(output_file), False)
 
-                                app._run_file_transcription(
-                                    "/path/to/video.mp4", str(output_file), False
-                                )
-
-                                # Error dialog should be shown
-                                app._show_transcription_error.assert_called_once()
-                                error_msg = app._show_transcription_error.call_args[0][0]
-                                assert (
-                                    "ffmpeg" in error_msg.lower() or "failed" in error_msg.lower()
-                                )
+            # Error dialog should be shown
+            app._show_transcription_error.assert_called_once()
+            error_msg = app._show_transcription_error.call_args[0][0]
+            assert "ffmpeg" in error_msg.lower() or "failed" in error_msg.lower()
 
     def test_shows_error_on_subprocess_timeout(self, tmp_path: Path):
         """Shows error dialog when subprocess times out."""
         import subprocess
 
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("subprocess.run") as mock_run:
-                                mock_config.return_value = MagicMock(
-                                    hotkey="ctrl+shift+space",
-                                    model="small",
-                                    language="en",
-                                    audio_device=None,
-                                    debug=False,
-                                    clear_clipboard=False,
-                                    last_output_dir=None,
-                                )
-                                mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                mock_run.side_effect = subprocess.TimeoutExpired(
-                                    cmd=["hanasu"], timeout=600
-                                )
+        with (
+            patch("hanasu.main.load_config") as mock_config,
+            patch("hanasu.main.load_dictionary") as mock_dict,
+            patch("hanasu.main.Recorder"),
+            patch("hanasu.main.Transcriber"),
+            patch("hanasu.main.HotkeyListener"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_config.return_value = MagicMock(
+                hotkey="ctrl+shift+space",
+                model="small",
+                language="en",
+                audio_device=None,
+                debug=False,
+                clear_clipboard=False,
+                last_output_dir=None,
+            )
+            mock_dict.return_value = MagicMock(terms=[], replacements={})
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd=["hanasu"], timeout=600)
 
-                                app = Hanasu(config_dir=tmp_path)
-                                app._show_transcription_error = MagicMock()
-                                output_file = tmp_path / "output.txt"
+            app = Hanasu(config_dir=tmp_path)
+            app._show_transcription_error = MagicMock()
+            output_file = tmp_path / "output.txt"
 
-                                app._run_file_transcription(
-                                    "/path/to/large_video.mp4", str(output_file), False
-                                )
+            app._run_file_transcription("/path/to/large_video.mp4", str(output_file), False)
 
-                                # Error dialog should be shown with timeout message
-                                app._show_transcription_error.assert_called_once()
-                                error_msg = app._show_transcription_error.call_args[0][0]
-                                assert "timeout" in error_msg.lower()
+            # Error dialog should be shown with timeout message
+            app._show_transcription_error.assert_called_once()
+            error_msg = app._show_transcription_error.call_args[0][0]
+            assert "timeout" in error_msg.lower()
 
     def test_no_error_shown_on_successful_completion(self, tmp_path: Path):
         """No error dialog shown when subprocess succeeds."""
-        with patch("hanasu.main.load_config") as mock_config:
-            with patch("hanasu.main.load_dictionary") as mock_dict:
-                with patch("hanasu.main.Recorder"):
-                    with patch("hanasu.main.Transcriber"):
-                        with patch("hanasu.main.HotkeyListener"):
-                            with patch("subprocess.run") as mock_run:
-                                mock_config.return_value = MagicMock(
-                                    hotkey="ctrl+shift+space",
-                                    model="small",
-                                    language="en",
-                                    audio_device=None,
-                                    debug=False,
-                                    clear_clipboard=False,
-                                    last_output_dir=None,
-                                )
-                                mock_dict.return_value = MagicMock(terms=[], replacements={})
-                                mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with (
+            patch("hanasu.main.load_config") as mock_config,
+            patch("hanasu.main.load_dictionary") as mock_dict,
+            patch("hanasu.main.Recorder"),
+            patch("hanasu.main.Transcriber"),
+            patch("hanasu.main.HotkeyListener"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_config.return_value = MagicMock(
+                hotkey="ctrl+shift+space",
+                model="small",
+                language="en",
+                audio_device=None,
+                debug=False,
+                clear_clipboard=False,
+                last_output_dir=None,
+            )
+            mock_dict.return_value = MagicMock(terms=[], replacements={})
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
 
-                                app = Hanasu(config_dir=tmp_path)
-                                app._show_transcription_error = MagicMock()
-                                output_file = tmp_path / "output.txt"
+            app = Hanasu(config_dir=tmp_path)
+            app._show_transcription_error = MagicMock()
+            output_file = tmp_path / "output.txt"
 
-                                app._run_file_transcription(
-                                    "/path/to/audio.mp3", str(output_file), False
-                                )
+            app._run_file_transcription("/path/to/audio.mp3", str(output_file), False)
 
-                                # No error should be shown on success
-                                app._show_transcription_error.assert_not_called()
+            # No error should be shown on success
+            app._show_transcription_error.assert_not_called()
 
 
 class TestShowTranscriptionError:
