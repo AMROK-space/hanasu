@@ -204,6 +204,14 @@ This verifies all components are correctly installed and configured.
 - Try a smaller model: `"model": "base"` or `"model": "tiny"`
 - Ensure you're on Apple Silicon for MLX acceleration
 
+### Menu bar icon not visible
+On MacBooks with a notch (M1 Pro/Max and later), the menu bar icon may be hidden if you have too many menu bar items. macOS silently hides overflow icons behind the notch with no indication.
+
+To fix:
+1. Remove or hide some menu bar icons (use a tool like [Bartender](https://www.macbartender.com/) or [Hidden Bar](https://github.com/dwarvesf/hidden))
+2. Verify Hanasu is running: `hanasu --status`
+3. The app is still functional even if the icon is hidden - the hotkey still works
+
 ## License
 
 MIT
