@@ -13,17 +13,36 @@ class DeviceNotFoundError(Exception):
     pass
 
 
+def refresh_devices() -> None:
+    """Refresh the audio device list by reinitializing PortAudio.
+
+    This is necessary to detect devices plugged in after the app started,
+    as PortAudio caches the device list on first initialization.
+
+    Note: Uses private sounddevice APIs (_terminate, _initialize).
+    If refresh fails, continues with the existing device list.
+    """
+    try:
+        sd._terminate()
+        sd._initialize()
+    except Exception:
+        # If refresh fails, continue with existing device list rather than crash
+        pass
+
+
 class Recorder:
     """Records audio from microphone."""
 
-    def __init__(self, device: str | None = None):
+    def __init__(self, device: str | None = None, fallback_to_default: bool = False):
         """Initialize recorder with optional device name.
 
         Args:
             device: Name of audio input device, or None for system default.
+            fallback_to_default: If True, fall back to system default when
+                specified device is not found. If False, raise DeviceNotFoundError.
 
         Raises:
-            DeviceNotFoundError: If specified device is not found.
+            DeviceNotFoundError: If specified device is not found and fallback_to_default is False.
         """
         self.device = device
         self._buffer: list[np.ndarray] = []
@@ -34,9 +53,12 @@ class Recorder:
         if device is not None:
             available = list_input_devices()
             if device not in available:
-                raise DeviceNotFoundError(
-                    f"Audio device not found: {device}. Available devices: {', '.join(available)}"
-                )
+                if fallback_to_default:
+                    self.device = None  # Fall back to system default
+                else:
+                    raise DeviceNotFoundError(
+                        f"Audio device not found: {device}. Available devices: {', '.join(available)}"
+                    )
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time, status) -> None:
         """Callback for audio stream - accumulates audio chunks."""
@@ -44,7 +66,12 @@ class Recorder:
             self._buffer.append(indata.copy().flatten())
 
     def start(self) -> None:
-        """Start recording audio."""
+        """Start recording audio.
+
+        Refreshes the device list before recording to detect any
+        microphones plugged in since the app started.
+        """
+        refresh_devices()
         self._buffer = []
         self._recording = True
         self._stream = sd.InputStream(

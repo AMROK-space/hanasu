@@ -9,6 +9,7 @@ from hanasu.recorder import (
     DeviceNotFoundError,
     Recorder,
     list_input_devices,
+    refresh_devices,
 )
 
 
@@ -120,3 +121,98 @@ class TestListInputDevices:
             devices = list_input_devices()
 
             assert devices == []
+
+
+class TestRefreshDevices:
+    """Test device refresh functionality for hotplug support."""
+
+    def test_refresh_devices_updates_device_list(self):
+        """refresh_devices() causes list_input_devices() to see newly connected devices."""
+        with patch("hanasu.recorder.sd") as mock_sd:
+            # Initially only built-in mic
+            mock_sd.query_devices.return_value = [
+                {"name": "Built-in Microphone", "max_input_channels": 2},
+            ]
+
+            devices_before = list_input_devices()
+            assert "USB Microphone" not in devices_before
+
+            # Simulate USB mic plugged in - query_devices returns new list after refresh
+            def update_devices_after_reinit():
+                mock_sd.query_devices.return_value = [
+                    {"name": "Built-in Microphone", "max_input_channels": 2},
+                    {"name": "USB Microphone", "max_input_channels": 1},
+                ]
+
+            mock_sd._initialize.side_effect = update_devices_after_reinit
+
+            refresh_devices()
+
+            devices_after = list_input_devices()
+            assert "USB Microphone" in devices_after
+            mock_sd._terminate.assert_called_once()
+            mock_sd._initialize.assert_called_once()
+
+
+class TestRecorderFallback:
+    """Test graceful fallback when configured device is unavailable."""
+
+    def test_recorder_falls_back_to_default_when_device_not_found(self):
+        """Recorder falls back to system default when configured device is unavailable."""
+        with patch("hanasu.recorder.sd") as mock_sd:
+            mock_sd.query_devices.return_value = [
+                {"name": "Built-in Microphone", "max_input_channels": 2},
+            ]
+
+            # Request a device that doesn't exist - should fall back to None (system default)
+            recorder = Recorder(device="AirPods Pro", fallback_to_default=True)
+
+            assert recorder.device is None  # Fell back to system default
+
+    def test_recorder_still_raises_when_fallback_disabled(self):
+        """Recorder raises DeviceNotFoundError when fallback is disabled."""
+        with patch("hanasu.recorder.sd") as mock_sd:
+            mock_sd.query_devices.return_value = [
+                {"name": "Built-in Microphone", "max_input_channels": 2},
+            ]
+
+            # Default behavior (no fallback) should still raise
+            with pytest.raises(DeviceNotFoundError, match="AirPods Pro"):
+                Recorder(device="AirPods Pro")
+
+
+class TestRecorderHotplug:
+    """Test that recorder can use devices plugged in after app start."""
+
+    def test_start_can_use_device_connected_after_init(self):
+        """Recorder.start() refreshes devices, allowing use of newly connected mics."""
+        with patch("hanasu.recorder.sd") as mock_sd:
+            # Initially no USB mic
+            mock_sd.query_devices.return_value = [
+                {"name": "Built-in Microphone", "max_input_channels": 2},
+            ]
+
+            # Create recorder with default device
+            recorder = Recorder(device=None)
+
+            # Simulate USB mic plugged in after init
+            def update_devices_after_reinit():
+                mock_sd.query_devices.return_value = [
+                    {"name": "Built-in Microphone", "max_input_channels": 2},
+                    {"name": "USB Microphone", "max_input_channels": 1},
+                ]
+
+            mock_sd._initialize.side_effect = update_devices_after_reinit
+
+            # Change device to the newly connected one
+            recorder.device = "USB Microphone"
+
+            # start() should refresh devices and successfully create stream
+            recorder.start()
+
+            # Verify stream was created with the USB mic
+            mock_sd.InputStream.assert_called_once()
+            call_kwargs = mock_sd.InputStream.call_args[1]
+            assert call_kwargs["device"] == "USB Microphone"
+
+            recorder.stop()

@@ -47,8 +47,8 @@ class Hanasu:
         self.config = load_config(config_dir)
         self.dictionary = load_dictionary(config_dir)
 
-        # Initialize components
-        self.recorder = Recorder(device=self.config.audio_device)
+        # Initialize components - fallback to default if configured device unavailable
+        self.recorder = Recorder(device=self.config.audio_device, fallback_to_default=True)
         self.transcriber = Transcriber(
             model=self.config.model,
             language=self.config.language,
