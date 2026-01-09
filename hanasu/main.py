@@ -1029,7 +1029,7 @@ def run_transcribe(
 
     # --large flag overrides --model for backward compatibility
     model_key = "large" if use_large else model
-    model_path = MODEL_PATHS[model_key]
+    model_path = MODEL_PATHS.get(model_key, MODEL_PATHS["small"])
 
     # Check if input is a video file
     temp_audio_path = None

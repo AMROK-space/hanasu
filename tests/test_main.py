@@ -1552,6 +1552,40 @@ class TestRunFileTranscription:
             # No error should be shown on success
             app._show_transcription_error.assert_not_called()
 
+    def test_handles_paths_with_spaces(self, tmp_path: Path):
+        """Subprocess command handles file paths with spaces correctly."""
+        with (
+            patch("hanasu.main.load_config") as mock_config,
+            patch("hanasu.main.load_dictionary") as mock_dict,
+            patch("hanasu.main.Recorder"),
+            patch("hanasu.main.Transcriber"),
+            patch("hanasu.main.HotkeyListener"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_config.return_value = MagicMock(
+                hotkey="ctrl+shift+space",
+                model="small",
+                language="en",
+                audio_device=None,
+                debug=False,
+                clear_clipboard=False,
+                last_output_dir=None,
+            )
+            mock_dict.return_value = MagicMock(terms=[], replacements={})
+            mock_run.return_value = MagicMock(returncode=0, stderr="")
+
+            app = Hanasu(config_dir=tmp_path)
+            output_file = tmp_path / "my output file.txt"
+
+            app._run_file_transcription("/path/to/my audio file.mp3", str(output_file), False)
+
+            call_args = mock_run.call_args
+            cmd = call_args[0][0]
+
+            # Paths with spaces should be passed as separate list elements (not shell-quoted)
+            assert "/path/to/my audio file.mp3" in cmd
+            assert str(output_file) in cmd
+
 
 class TestShowTranscriptionError:
     """Test error dialog for file transcription."""
