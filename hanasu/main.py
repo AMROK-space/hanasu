@@ -586,12 +586,10 @@ def find_uv_binary() -> Path:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
 
-    # Fall back to shutil.which for PATH lookup
+    # Fall back to shutil.which for PATH lookup (already verifies exists + executable)
     which_result = shutil.which("uv")
     if which_result:
-        which_path = Path(which_result)
-        if which_path.is_file():
-            return which_path
+        return Path(which_result)
 
     raise FileNotFoundError(
         "uv not found. Please ensure uv is installed.\n"
