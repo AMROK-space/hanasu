@@ -35,11 +35,10 @@ if [[ -d "$PROJECT_DIR/.git" ]]; then
     echo "  uv sync"
     echo "  uv run hanasu run"
     echo
-    echo "For system install (auto-start, Spotlight, CLI):"
+    echo "For system install (Spotlight, CLI):"
     echo "  curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
     echo
     echo "This installs to ~/.hanasu/ and sets up:"
-    echo "  - Auto-start on login (LaunchAgent)"
     echo "  - Spotlight integration (/Applications/Hanasu.app)"
     echo "  - CLI command (hanasu)"
     exit 1

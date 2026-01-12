@@ -24,7 +24,6 @@ curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh 
 ```
 
 This installs to `~/.hanasu/` and sets up:
-- Auto-start on login (LaunchAgent)
 - Spotlight integration (/Applications/Hanasu.app)
 - CLI command (`hanasu`)
 
@@ -134,7 +133,7 @@ Options:
 ## CLI Commands
 
 ```bash
-hanasu              # Start the app (normally auto-starts on login)
+hanasu              # Start the app (runs in menu bar)
 hanasu --status     # Show configuration and status
 hanasu setup        # Run first-time setup
 hanasu update       # Update to latest version

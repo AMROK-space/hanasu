@@ -5,7 +5,6 @@
 # This installer:
 # - Downloads Hanasu to ~/.hanasu/src/
 # - Creates a virtual environment at ~/.hanasu/.venv/
-# - Sets up auto-start via LaunchAgent
 # - Creates /Applications/Hanasu.app for Spotlight
 # - Writes an install manifest for clean uninstall
 
@@ -75,10 +74,10 @@ if [[ -n "$SCRIPT_DIR" && -d "$SCRIPT_DIR/.git" && -f "$SCRIPT_DIR/pyproject.tom
         echo "  cd $SCRIPT_DIR"
         echo "  uv sync && uv run hanasu run"
         echo
-        echo "For system install (auto-start, Spotlight, CLI):"
+        echo "For system install (Spotlight, CLI):"
         echo "  curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
         echo
-        echo "This installs to ~/.hanasu/ and sets up auto-start."
+        echo "This installs to ~/.hanasu/ with Spotlight and CLI integration."
         exit 1
     fi
 fi
@@ -129,15 +128,11 @@ if [[ -d "$LEGACY_DIR" && ! -d "$SRC_DIR" ]]; then
     info "Migration complete"
 fi
 
-# Check for LaunchAgent pointing elsewhere
+# Remove any existing LaunchAgent (auto-start has been removed)
 if [[ -f "$PLIST_PATH" ]]; then
-    CURRENT_TARGET=$(grep -A1 'ProgramArguments' "$PLIST_PATH" 2>/dev/null | grep string | head -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/' || true)
-    if [[ -n "$CURRENT_TARGET" && "$CURRENT_TARGET" != "$VENV_DIR/bin/hanasu" ]]; then
-        warn "Found LaunchAgent pointing to: $CURRENT_TARGET"
-        echo "This will be updated to point to ~/.hanasu/"
-        launchctl unload "$PLIST_PATH" 2>/dev/null || true
-        rm -f "$PLIST_PATH"
-    fi
+    info "Removing auto-start (no longer supported)..."
+    launchctl unload "$PLIST_PATH" 2>/dev/null || true
+    rm -f "$PLIST_PATH"
 fi
 
 # -----------------------------------------------------------------------------
@@ -194,44 +189,11 @@ cat > "$MANIFEST_FILE" << EOF
   "artifacts": [
     {"type": "directory", "path": "$SRC_DIR"},
     {"type": "directory", "path": "$VENV_DIR"},
-    {"type": "file", "path": "$PLIST_PATH"},
     {"type": "directory", "path": "$APP_PATH"},
     {"type": "symlink", "path": "$CLI_LINK"}
   ]
 }
 EOF
-
-# -----------------------------------------------------------------------------
-# Create LaunchAgent
-# -----------------------------------------------------------------------------
-
-info "Setting up auto-start..."
-mkdir -p "$LAUNCH_AGENT_DIR"
-
-cat > "$PLIST_PATH" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.amrok.hanasu</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$VENV_DIR/bin/hanasu</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>$INSTALL_DIR/hanasu.log</string>
-    <key>StandardErrorPath</key>
-    <string>$INSTALL_DIR/hanasu.log</string>
-</dict>
-</plist>
-EOF
-
-launchctl load "$PLIST_PATH" 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
 # Create .app bundle
@@ -326,12 +288,11 @@ echo "IMPORTANT: Grant Accessibility permission"
 echo "  System Settings → Privacy & Security → Accessibility"
 echo "  Enable access for Terminal or Python"
 echo
-echo "Hanasu will start automatically on login."
-echo "Look for the microphone icon in your menu bar."
-echo
-echo "To restart after quitting:"
+echo "To start Hanasu:"
 echo "  - Search 'Hanasu' in Spotlight (Cmd+Space)"
 echo "  - Or run: hanasu"
+echo
+echo "Look for the microphone icon in your menu bar."
 echo
 if [[ "$PATH_ADDED" == "true" ]]; then
     echo "NOTE: Run 'source ~/.zshrc' or open a new terminal for CLI."
