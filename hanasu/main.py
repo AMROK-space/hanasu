@@ -560,13 +560,50 @@ def is_model_cached(model: str) -> bool:
     return (cache_dir / model_cache_name).exists()
 
 
+def find_uv_binary() -> Path:
+    """Find the uv binary in common installation locations.
+
+    macOS menu bar apps don't inherit the shell's PATH, so we need to
+    look in common locations where uv might be installed.
+
+    Returns:
+        Path to the uv binary.
+
+    Raises:
+        FileNotFoundError: If uv is not found in any location.
+    """
+    home = Path.home()
+
+    # Common installation locations for uv
+    candidates = [
+        home / ".local" / "bin" / "uv",  # pipx, uv installer
+        home / ".cargo" / "bin" / "uv",  # Rust/cargo install
+        Path("/opt/homebrew/bin/uv"),  # Homebrew Apple Silicon
+        Path("/usr/local/bin/uv"),  # Homebrew Intel, system install
+    ]
+
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+
+    # Fall back to shutil.which for PATH lookup (already verifies exists + executable)
+    which_result = shutil.which("uv")
+    if which_result:
+        return Path(which_result)
+
+    raise FileNotFoundError(
+        "uv not found. Please ensure uv is installed.\n"
+        "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    )
+
+
 def run_update() -> None:
     """Update Hanasu to the latest version.
 
     Pulls latest code from git and syncs dependencies.
 
     Raises:
-        FileNotFoundError: If source directory doesn't exist.
+        FileNotFoundError: If source directory or uv binary doesn't exist.
         RuntimeError: If git or uv commands fail.
     """
     # New canonical location
@@ -582,6 +619,9 @@ def run_update() -> None:
                 "Source directory not found.\n"
                 "Please reinstall: curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
             )
+
+    # Find uv binary - menu bar apps don't inherit shell PATH
+    uv_path = find_uv_binary()
 
     print("Updating Hanasu...")
 
@@ -604,10 +644,10 @@ def run_update() -> None:
         raise RuntimeError(f"git pull failed: {result.stderr}")
     print(result.stdout.strip() or "Already up to date.")
 
-    # Sync dependencies
+    # Sync dependencies using explicit path to uv
     print("Syncing dependencies...")
     result = subprocess.run(
-        ["uv", "sync"],
+        [str(uv_path), "sync"],
         cwd=source_dir,
         capture_output=True,
         text=True,
@@ -772,14 +812,12 @@ def run_doctor() -> None:
     Verifies:
     - Install manifest exists and is valid
     - All artifacts exist and are correct
-    - LaunchAgent is properly configured
     - No conflicting installations
     """
     install_dir = Path.home() / ".hanasu"
     src_dir = install_dir / "src"
     manifest_file = install_dir / ".install-manifest"
     legacy_dir = Path.home() / ".hanasu-src"
-    plist_path = Path.home() / "Library" / "LaunchAgents" / "com.amrok.hanasu.plist"
     app_path = Path("/Applications/Hanasu.app")
     cli_link = Path.home() / ".local" / "bin" / "hanasu"
     venv_bin = src_dir / ".venv" / "bin" / "hanasu"
@@ -821,44 +859,6 @@ def run_doctor() -> None:
         print(f"  ✓ Virtual environment: {install_dir / '.venv'}")
     else:
         issues.append(f"Virtual environment missing or incomplete: {install_dir / '.venv'}")
-
-    # Check LaunchAgent
-    print()
-    print("Checking LaunchAgent...")
-    if plist_path.exists():
-        print(f"  ✓ Plist: {plist_path}")
-
-        # Check what it points to
-        try:
-            import subprocess
-
-            result = subprocess.run(
-                ["plutil", "-extract", "ProgramArguments.0", "raw", str(plist_path)],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                target = result.stdout.strip()
-                print(f"    Points to: {target}")
-                if not Path(target).exists():
-                    issues.append(f"LaunchAgent points to missing file: {target}")
-                elif str(venv_bin) not in target and str(install_dir) not in target:
-                    warnings.append(f"LaunchAgent points outside install dir: {target}")
-        except Exception:
-            pass
-
-        # Check if loaded
-        result = subprocess.run(
-            ["launchctl", "list", "com.amrok.hanasu"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            print("    Status: Loaded")
-        else:
-            print("    Status: Not loaded")
-    else:
-        issues.append(f"LaunchAgent missing: {plist_path}")
 
     # Check application bundle
     print()
