@@ -483,15 +483,8 @@ def run_menubar_app(
 
 
 def start_app_loop():
-    """Start the NSApplication event loop (blocking).
-
-    Uses runConsoleEventLoop with installInterrupt=True to enable
-    Ctrl+C (SIGINT) handling for graceful shutdown from the terminal.
-    """
-    try:
-        AppHelper.runConsoleEventLoop(installInterrupt=True)
-    except KeyboardInterrupt:
-        AppHelper.stopEventLoop()
+    """Start the NSApplication event loop (blocking)."""
+    AppHelper.runEventLoop()
 
 
 def stop_app_loop():
