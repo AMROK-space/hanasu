@@ -168,6 +168,9 @@ class MenuBarApp(NSObject):
 
     def changeHotkey_(self, sender):
         """Handle change hotkey menu item."""
+        # Activate app to ensure dialog gets focus (needed for menu bar apps)
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+
         alert = NSAlert.alloc().init()
         alert.setMessageText_("Change Hotkey")
         alert.setInformativeText_("Enter the new hotkey (e.g., cmd+alt+v, f19):")
@@ -195,6 +198,10 @@ class MenuBarApp(NSObject):
             0.0,
             modes,
         )
+
+        # Bring dialog to front (menu bar apps can have window ordering issues)
+        alert.window().makeKeyAndOrderFront_(None)
+        alert.window().setLevel_(3)  # NSModalPanelWindowLevel
 
         # Run modal
         response = alert.runModal()
@@ -478,10 +485,13 @@ def run_menubar_app(
 def start_app_loop():
     """Start the NSApplication event loop (blocking).
 
-    Uses installInterrupt=True to enable Ctrl+C (SIGINT) handling
-    for graceful shutdown from the terminal.
+    Uses runConsoleEventLoop with installInterrupt=True to enable
+    Ctrl+C (SIGINT) handling for graceful shutdown from the terminal.
     """
-    AppHelper.runEventLoop(installInterrupt=True)
+    try:
+        AppHelper.runConsoleEventLoop(installInterrupt=True)
+    except KeyboardInterrupt:
+        AppHelper.stopEventLoop()
 
 
 def stop_app_loop():
