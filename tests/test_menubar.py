@@ -785,24 +785,13 @@ class TestShowFormatPicker:
 
 
 class TestStartAppLoop:
-    """Test start_app_loop function for SIGINT handling."""
+    """Test start_app_loop function."""
 
-    def test_start_app_loop_uses_console_event_loop(self):
-        """start_app_loop uses runConsoleEventLoop with installInterrupt=True."""
+    def test_start_app_loop_calls_run_event_loop(self):
+        """start_app_loop calls AppHelper.runEventLoop."""
         from hanasu.menubar import start_app_loop
 
         with patch("hanasu.menubar.AppHelper") as mock_helper:
             start_app_loop()
 
-            mock_helper.runConsoleEventLoop.assert_called_once_with(installInterrupt=True)
-
-    def test_start_app_loop_handles_keyboard_interrupt(self):
-        """start_app_loop catches KeyboardInterrupt and stops event loop."""
-        from hanasu.menubar import start_app_loop
-
-        with patch("hanasu.menubar.AppHelper") as mock_helper:
-            mock_helper.runConsoleEventLoop.side_effect = KeyboardInterrupt()
-            start_app_loop()
-
-            # Should call stopEventLoop when KeyboardInterrupt is raised
-            mock_helper.stopEventLoop.assert_called_once()
+            mock_helper.runEventLoop.assert_called_once()
