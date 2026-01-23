@@ -787,22 +787,22 @@ class TestShowFormatPicker:
 class TestStartAppLoop:
     """Test start_app_loop function for SIGINT handling."""
 
-    def test_start_app_loop_uses_install_interrupt(self):
-        """start_app_loop passes installInterrupt=True to runEventLoop."""
+    def test_start_app_loop_uses_console_event_loop(self):
+        """start_app_loop uses runConsoleEventLoop with installInterrupt=True."""
         from hanasu.menubar import start_app_loop
 
         with patch("hanasu.menubar.AppHelper") as mock_helper:
             start_app_loop()
 
-            mock_helper.runEventLoop.assert_called_once_with(installInterrupt=True)
+            mock_helper.runConsoleEventLoop.assert_called_once_with(installInterrupt=True)
 
-    def test_start_app_loop_enables_ctrl_c_handling(self):
-        """start_app_loop enables Ctrl+C (SIGINT) handling for graceful shutdown."""
+    def test_start_app_loop_handles_keyboard_interrupt(self):
+        """start_app_loop catches KeyboardInterrupt and stops event loop."""
         from hanasu.menubar import start_app_loop
 
         with patch("hanasu.menubar.AppHelper") as mock_helper:
+            mock_helper.runConsoleEventLoop.side_effect = KeyboardInterrupt()
             start_app_loop()
 
-            # The key parameter for enabling Ctrl+C
-            call_kwargs = mock_helper.runEventLoop.call_args[1]
-            assert call_kwargs.get("installInterrupt") is True
+            # Should call stopEventLoop when KeyboardInterrupt is raised
+            mock_helper.stopEventLoop.assert_called_once()
