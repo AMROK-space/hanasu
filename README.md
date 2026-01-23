@@ -103,7 +103,7 @@ Edit `~/.hanasu/config.json`:
 - **model**: Whisper model size (`tiny`, `base`, `small`, `medium`, `large`)
 - **language**: Language code (e.g., `en`, `es`, `fr`)
 - **audio_device**: Specific microphone name, or `null` for system default
-- **debug**: Enable verbose logging (logs transcribed text to `~/.hanasu/hanasu.log`)
+- **debug**: Enable verbose console output (logs are always written to `~/Library/Logs/Hanasu/hanasu.log`)
 - **clear_clipboard**: Clear clipboard after pasting transcribed text
 - **last_output_dir**: Remembered directory for file transcription saves (auto-updated)
 
@@ -203,6 +203,14 @@ This verifies all components are correctly installed and configured.
 ### Transcription is slow
 - Try a smaller model: `"model": "base"` or `"model": "tiny"`
 - Ensure you're on Apple Silicon for MLX acceleration
+
+### View logs
+Hanasu logs to `~/Library/Logs/Hanasu/hanasu.log`. View recent logs with:
+```bash
+tail -f ~/Library/Logs/Hanasu/hanasu.log
+```
+
+Or open in Console.app: Applications → Utilities → Console → File → Open → select `hanasu.log`
 
 ## License
 

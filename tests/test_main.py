@@ -1381,7 +1381,7 @@ class TestRunFileTranscription:
             cmd = call_args[0][0]
 
             # Command should include hanasu transcribe
-            assert "hanasu" in cmd[1] or cmd[0].endswith("python")
+            assert "hanasu" in cmd[1] or cmd[0].endswith(("python", "python3"))
             assert "transcribe" in cmd
             assert "/path/to/audio.mp3" in cmd
             assert "-o" in cmd
@@ -1521,7 +1521,7 @@ class TestRunFileTranscription:
             # Error dialog should be shown with timeout message
             app._show_transcription_error.assert_called_once()
             error_msg = app._show_transcription_error.call_args[0][0]
-            assert "timeout" in error_msg.lower()
+            assert "timed out" in error_msg.lower() or "timeout" in error_msg.lower()
 
     def test_no_error_shown_on_successful_completion(self, tmp_path: Path):
         """No error dialog shown when subprocess succeeds."""
