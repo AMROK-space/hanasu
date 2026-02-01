@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -9,8 +10,6 @@ import sys
 import threading
 import typing
 from pathlib import Path
-
-import logging
 
 from hanasu import __version__
 from hanasu.config import (
@@ -21,9 +20,9 @@ from hanasu.config import (
     load_dictionary,
     save_config,
 )
-from hanasu.logging_config import setup_logging
 from hanasu.hotkey import HotkeyListener
 from hanasu.injector import inject_text
+from hanasu.logging_config import setup_logging
 from hanasu.menubar import (
     open_file_picker,
     run_menubar_app,
@@ -204,6 +203,7 @@ class Hanasu:
 
     def run(self) -> None:
         """Start the daemon and listen for hotkey."""
+        self._logger.debug("Setting up menu bar...")
         print(f"Hanasu v{__version__} running...")
         print(f"Hotkey: {self.config.hotkey}")
         print("Running in menu bar (click icon to quit)")
@@ -221,15 +221,19 @@ class Hanasu:
             is_model_cached=is_model_cached,
         )
 
+        self._logger.debug("Menu bar ready")
+
         # Check for updates in background
         update_thread = threading.Thread(target=self._check_for_updates, daemon=True)
         update_thread.start()
 
         # Start hotkey listener
+        self._logger.debug("Starting hotkey listener...")
         self.hotkey_listener.start()
 
         try:
             # Run the macOS event loop (blocking)
+            self._logger.debug("Starting event loop...")
             start_app_loop()
         except KeyboardInterrupt:
             print("\nShutting down...")
@@ -1168,6 +1172,9 @@ def main() -> None:
         print_status(args.config_dir)
     else:
         # Run the daemon
+        # Set up logging early so exceptions are captured to file
+        setup_logging(log_to_file=True)
+        logger = logging.getLogger("hanasu.main")
         try:
             app = Hanasu(config_dir=args.config_dir)
             app.run()
@@ -1175,6 +1182,7 @@ def main() -> None:
             print("Error: Config not found. Run 'hanasu setup' first.")
             sys.exit(1)
         except Exception as e:
+            logger.exception(f"Fatal error: {e}")
             print(f"Error: {e}")
             sys.exit(1)
 

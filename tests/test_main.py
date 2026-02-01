@@ -1760,3 +1760,137 @@ class TestEnsureHomebrewInPath:
 
         assert "/opt/homebrew/bin" in os.environ["PATH"]
         assert "/usr/local/bin" in os.environ["PATH"]
+
+
+class TestRunMethodLogging:
+    """Test that run() method logs progress at key stages for debugging Spotlight launch issues."""
+
+    def test_run_logs_entering_method(self, tmp_path: Path):
+        """run() logs a debug message when entering the method."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener_class:
+                            with patch("hanasu.main.run_menubar_app"):
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+                                    mock_listener = MagicMock()
+                                    mock_listener_class.return_value = mock_listener
+
+                                    app = Hanasu(config_dir=tmp_path)
+
+                                    with patch.object(app._logger, "debug") as mock_debug:
+                                        app.run()
+
+                                        # Should have logged at least one debug message about setting up
+                                        debug_messages = [
+                                            str(call) for call in mock_debug.call_args_list
+                                        ]
+                                        assert any(
+                                            "menu" in msg.lower() or "setting" in msg.lower()
+                                            for msg in debug_messages
+                                        ), f"Expected menu bar setup log, got: {debug_messages}"
+
+    def test_run_logs_hotkey_listener_start(self, tmp_path: Path):
+        """run() logs when starting the hotkey listener."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener_class:
+                            with patch("hanasu.main.run_menubar_app"):
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+                                    mock_listener = MagicMock()
+                                    mock_listener_class.return_value = mock_listener
+
+                                    app = Hanasu(config_dir=tmp_path)
+
+                                    with patch.object(app._logger, "debug") as mock_debug:
+                                        app.run()
+
+                                        debug_messages = [
+                                            str(call) for call in mock_debug.call_args_list
+                                        ]
+                                        assert any(
+                                            "hotkey" in msg.lower() or "listener" in msg.lower()
+                                            for msg in debug_messages
+                                        ), f"Expected hotkey listener log, got: {debug_messages}"
+
+    def test_run_logs_event_loop_start(self, tmp_path: Path):
+        """run() logs when starting the event loop."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber"):
+                        with patch("hanasu.main.HotkeyListener") as mock_listener_class:
+                            with patch("hanasu.main.run_menubar_app"):
+                                with patch("hanasu.main.start_app_loop"):
+                                    mock_config.return_value = MagicMock(
+                                        hotkey="ctrl+shift+space",
+                                        model="small",
+                                        language="en",
+                                        audio_device=None,
+                                        debug=True,
+                                    )
+                                    mock_dict.return_value = MagicMock(terms=[], replacements={})
+                                    mock_listener = MagicMock()
+                                    mock_listener_class.return_value = mock_listener
+
+                                    app = Hanasu(config_dir=tmp_path)
+
+                                    with patch.object(app._logger, "debug") as mock_debug:
+                                        app.run()
+
+                                        debug_messages = [
+                                            str(call) for call in mock_debug.call_args_list
+                                        ]
+                                        assert any(
+                                            "event" in msg.lower() or "loop" in msg.lower()
+                                            for msg in debug_messages
+                                        ), f"Expected event loop log, got: {debug_messages}"
+
+
+class TestMainExceptionLogging:
+    """Test that main() logs exceptions to file instead of just printing."""
+
+    def test_main_logs_exceptions_via_logger(self, tmp_path: Path, monkeypatch):
+        """main() logs fatal exceptions via logger, not just print."""
+        from hanasu.main import main
+
+        # Simulate args to run daemon
+        monkeypatch.setattr("sys.argv", ["hanasu", "--config-dir", str(tmp_path)])
+
+        with patch("hanasu.main.Hanasu") as mock_hanasu_class:
+            with patch("hanasu.main.setup_logging"):
+                # Make Hanasu.run() raise an exception
+                mock_app = MagicMock()
+                mock_app.run.side_effect = RuntimeError("Test error")
+                mock_hanasu_class.return_value = mock_app
+
+                with patch("hanasu.main.logging.getLogger") as mock_get_logger:
+                    mock_logger = MagicMock()
+                    mock_get_logger.return_value = mock_logger
+
+                    with pytest.raises(SystemExit):
+                        main()
+
+                    # Should have logged the exception via logger
+                    assert mock_logger.exception.called or mock_logger.error.called, (
+                        "Expected exception to be logged via logger"
+                    )
