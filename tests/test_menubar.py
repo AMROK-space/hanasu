@@ -116,105 +116,16 @@ class TestMenuBarUpdateIntegration:
 
 
 class TestHotkeyValidation:
-    """Test live hotkey validation before committing changes."""
+    """Test hotkey validation using parse_hotkey for syntax checking."""
 
-    def test_validate_hotkey_returns_true_on_correct_keypress(self):
-        """validate_hotkey returns True when user presses the correct hotkey."""
-        from hanasu.menubar import validate_hotkey
-
-        with patch("hanasu.menubar.Quartz") as mock_quartz:
-            # Set up constants needed by the code
-            mock_quartz.kCGEventKeyDown = 10
-            mock_quartz.kCGEventFlagMaskCommand = 0x100000
-            mock_quartz.kCGEventFlagMaskShift = 0x20000
-            mock_quartz.kCGEventFlagMaskAlternate = 0x80000
-            mock_quartz.kCGEventFlagMaskControl = 0x40000
-
-            # Capture the callback when CGEventTapCreate is called
-            captured_callback = [None]
-
-            def capture_callback(*args):
-                captured_callback[0] = args[4]  # callback is 5th argument
-                return MagicMock()
-
-            mock_quartz.CGEventTapCreate.side_effect = capture_callback
-
-            # Set up the event data for "correct" keypress
-            mock_event = MagicMock()
-            mock_quartz.CGEventGetIntegerValueField.return_value = 9  # 'v' keycode
-            mock_quartz.CGEventGetFlags.return_value = mock_quartz.kCGEventFlagMaskCommand
-
-            # Make CFRunLoopRunInMode invoke the callback with correct keypress
-            def invoke_callback(*args):
-                if captured_callback[0]:
-                    captured_callback[0](None, mock_quartz.kCGEventKeyDown, mock_event, None)
-
-            mock_quartz.CFRunLoopRunInMode.side_effect = invoke_callback
-
-            result = validate_hotkey("cmd+v", timeout=0.1)
-            assert result is True
-
-    def test_validate_hotkey_returns_false_on_timeout(self):
-        """validate_hotkey returns False if user doesn't press hotkey in time."""
-        from hanasu.menubar import validate_hotkey
-
-        with patch("hanasu.menubar.Quartz") as mock_quartz:
-            # Set up constants needed by the code
-            mock_quartz.kCGEventKeyDown = 10
-            mock_quartz.kCGEventFlagMaskCommand = 0x100000
-            mock_quartz.kCGEventFlagMaskShift = 0x20000
-            mock_quartz.kCGEventFlagMaskAlternate = 0x80000
-            mock_quartz.kCGEventFlagMaskControl = 0x40000
-            mock_quartz.CGEventTapCreate.return_value = MagicMock()
-
-            # Don't invoke callback - should timeout
-            result = validate_hotkey("cmd+v", timeout=0.1)
-            assert result is False
-
-    def test_validate_hotkey_returns_false_on_wrong_keypress(self):
-        """validate_hotkey returns False if user presses wrong hotkey."""
-        from hanasu.menubar import validate_hotkey
-
-        with patch("hanasu.menubar.Quartz") as mock_quartz:
-            # Set up constants needed by the code
-            mock_quartz.kCGEventKeyDown = 10
-            mock_quartz.kCGEventFlagMaskCommand = 0x100000
-            mock_quartz.kCGEventFlagMaskShift = 0x20000
-            mock_quartz.kCGEventFlagMaskAlternate = 0x80000
-            mock_quartz.kCGEventFlagMaskControl = 0x40000
-
-            # Capture the callback when CGEventTapCreate is called
-            captured_callback = [None]
-
-            def capture_callback(*args):
-                captured_callback[0] = args[4]
-                return MagicMock()
-
-            mock_quartz.CGEventTapCreate.side_effect = capture_callback
-
-            # Simulate wrong hotkey being pressed ('a' instead of 'v')
-            mock_event = MagicMock()
-            mock_quartz.CGEventGetIntegerValueField.return_value = 0  # 'a' keycode (not 'v')
-            mock_quartz.CGEventGetFlags.return_value = mock_quartz.kCGEventFlagMaskCommand
-
-            # Make CFRunLoopRunInMode invoke the callback with wrong keypress
-            def invoke_callback(*args):
-                if captured_callback[0]:
-                    captured_callback[0](None, mock_quartz.kCGEventKeyDown, mock_event, None)
-
-            mock_quartz.CFRunLoopRunInMode.side_effect = invoke_callback
-
-            result = validate_hotkey("cmd+v", timeout=0.1)
-            assert result is False
-
-    def test_change_hotkey_dialog_shows_validation_prompt(self):
-        """changeHotkey_ shows validation prompt after user enters new hotkey."""
+    def test_change_hotkey_uses_parse_hotkey_for_validation(self):
+        """changeHotkey_ uses parse_hotkey to validate hotkey syntax."""
         from hanasu.menubar import MenuBarApp
 
         with patch("hanasu.menubar.NSStatusBar"):
             with patch("hanasu.menubar.NSAlert") as mock_alert_class:
                 with patch("hanasu.menubar.NSTextField") as mock_textfield_class:
-                    with patch("hanasu.menubar.validate_hotkey") as mock_validate:
+                    with patch("hanasu.menubar.parse_hotkey") as mock_parse:
                         mock_alert = MagicMock()
                         mock_alert_class.alloc.return_value.init.return_value = mock_alert
                         mock_alert.runModal.return_value = 1000  # OK clicked
@@ -225,29 +136,73 @@ class TestHotkeyValidation:
                             mock_textfield
                         )
 
-                        mock_validate.return_value = True  # Validation passes
+                        mock_parse.return_value = {"keycode": 9, "modifier_mask": 0x100000}
 
+                        callback = MagicMock()
                         delegate = MenuBarApp.alloc().initWithCallbacks_(
-                            {"on_hotkey_change": MagicMock()}
+                            {"on_hotkey_change": callback}
                         )
                         delegate._status_item = MagicMock()
                         delegate._hotkey_display = "cmd+v"
 
                         delegate.changeHotkey_(None)
 
-                        # Should have called validate_hotkey with the new hotkey
-                        mock_validate.assert_called_once()
-                        call_args = mock_validate.call_args[0]
-                        assert call_args[0] == "cmd+alt+v"
+                        # Should have called parse_hotkey with the new hotkey
+                        mock_parse.assert_called_once_with("cmd+alt+v")
+                        # Callback should be called with new hotkey
+                        callback.assert_called_once_with("cmd+alt+v")
 
-    def test_change_hotkey_dialog_calls_callback_only_after_validation(self):
-        """changeHotkey_ only calls on_hotkey_change callback if validation passes."""
+    def test_change_hotkey_shows_error_on_invalid_hotkey_syntax(self):
+        """changeHotkey_ shows error dialog when hotkey syntax is invalid."""
+        from hanasu.hotkey import HotkeyParseError
         from hanasu.menubar import MenuBarApp
 
         with patch("hanasu.menubar.NSStatusBar"):
             with patch("hanasu.menubar.NSAlert") as mock_alert_class:
                 with patch("hanasu.menubar.NSTextField") as mock_textfield_class:
-                    with patch("hanasu.menubar.validate_hotkey") as mock_validate:
+                    with patch("hanasu.menubar.parse_hotkey") as mock_parse:
+                        # First alert for input dialog
+                        mock_input_alert = MagicMock()
+                        mock_input_alert.runModal.return_value = 1000  # OK clicked
+
+                        # Second alert for error dialog
+                        mock_error_alert = MagicMock()
+                        mock_error_alert.runModal.return_value = 1000
+
+                        mock_alert_class.alloc.return_value.init.side_effect = [
+                            mock_input_alert,
+                            mock_error_alert,
+                        ]
+
+                        mock_textfield = MagicMock()
+                        mock_textfield.stringValue.return_value = "invalid+hotkey+xyz"
+                        mock_textfield_class.alloc.return_value.initWithFrame_.return_value = (
+                            mock_textfield
+                        )
+
+                        # parse_hotkey raises error for invalid hotkey
+                        mock_parse.side_effect = HotkeyParseError("Unknown key: xyz")
+
+                        callback = MagicMock()
+                        delegate = MenuBarApp.alloc().initWithCallbacks_(
+                            {"on_hotkey_change": callback}
+                        )
+                        delegate._status_item = MagicMock()
+                        delegate._hotkey_display = "cmd+v"
+
+                        delegate.changeHotkey_(None)
+
+                        # Callback should NOT be called for invalid hotkey
+                        callback.assert_not_called()
+
+    def test_change_hotkey_calls_callback_for_valid_hotkey(self):
+        """changeHotkey_ calls on_hotkey_change callback for valid hotkey."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                with patch("hanasu.menubar.NSTextField") as mock_textfield_class:
+                    with patch("hanasu.menubar.parse_hotkey") as mock_parse:
                         mock_alert = MagicMock()
                         mock_alert_class.alloc.return_value.init.return_value = mock_alert
                         mock_alert.runModal.return_value = 1000  # OK clicked
@@ -258,7 +213,7 @@ class TestHotkeyValidation:
                             mock_textfield
                         )
 
-                        mock_validate.return_value = True  # Validation passes
+                        mock_parse.return_value = {"keycode": 9, "modifier_mask": 0x100000}
 
                         callback = MagicMock()
                         delegate = MenuBarApp.alloc().initWithCallbacks_(
@@ -272,25 +227,26 @@ class TestHotkeyValidation:
                         # Callback should be called with new hotkey
                         callback.assert_called_once_with("cmd+alt+v")
 
-    def test_change_hotkey_dialog_does_not_call_callback_if_validation_fails(self):
-        """changeHotkey_ does not call callback if validation fails."""
+    def test_change_hotkey_does_not_call_callback_on_parse_error(self):
+        """changeHotkey_ does not call callback if parse_hotkey fails."""
+        from hanasu.hotkey import HotkeyParseError
         from hanasu.menubar import MenuBarApp
 
         with patch("hanasu.menubar.NSStatusBar"):
             with patch("hanasu.menubar.NSAlert") as mock_alert_class:
                 with patch("hanasu.menubar.NSTextField") as mock_textfield_class:
-                    with patch("hanasu.menubar.validate_hotkey") as mock_validate:
+                    with patch("hanasu.menubar.parse_hotkey") as mock_parse:
                         mock_alert = MagicMock()
                         mock_alert_class.alloc.return_value.init.return_value = mock_alert
                         mock_alert.runModal.return_value = 1000  # OK clicked
 
                         mock_textfield = MagicMock()
-                        mock_textfield.stringValue.return_value = "cmd+alt+v"
+                        mock_textfield.stringValue.return_value = "invalid"
                         mock_textfield_class.alloc.return_value.initWithFrame_.return_value = (
                             mock_textfield
                         )
 
-                        mock_validate.return_value = False  # Validation fails
+                        mock_parse.side_effect = HotkeyParseError("No key specified")
 
                         callback = MagicMock()
                         delegate = MenuBarApp.alloc().initWithCallbacks_(
@@ -826,3 +782,16 @@ class TestShowFormatPicker:
             result = show_format_picker()
 
             assert result is None
+
+
+class TestStartAppLoop:
+    """Test start_app_loop function."""
+
+    def test_start_app_loop_calls_run_event_loop(self):
+        """start_app_loop calls AppHelper.runEventLoop."""
+        from hanasu.menubar import start_app_loop
+
+        with patch("hanasu.menubar.AppHelper") as mock_helper:
+            start_app_loop()
+
+            mock_helper.runEventLoop.assert_called_once()

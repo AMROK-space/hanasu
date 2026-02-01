@@ -24,7 +24,6 @@ curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh 
 ```
 
 This installs to `~/.hanasu/` and sets up:
-- Auto-start on login (LaunchAgent)
 - Spotlight integration (/Applications/Hanasu.app)
 - CLI command (`hanasu`)
 
@@ -103,7 +102,7 @@ Edit `~/.hanasu/config.json`:
 - **model**: Whisper model size (`tiny`, `base`, `small`, `medium`, `large`)
 - **language**: Language code (e.g., `en`, `es`, `fr`)
 - **audio_device**: Specific microphone name, or `null` for system default
-- **debug**: Enable verbose logging (logs transcribed text to `~/.hanasu/hanasu.log`)
+- **debug**: Enable verbose console output (logs are always written to `~/Library/Logs/Hanasu/hanasu.log`)
 - **clear_clipboard**: Clear clipboard after pasting transcribed text
 - **last_output_dir**: Remembered directory for file transcription saves (auto-updated)
 
@@ -134,7 +133,7 @@ Options:
 ## CLI Commands
 
 ```bash
-hanasu              # Start the app (normally auto-starts on login)
+hanasu              # Start the app (runs in menu bar)
 hanasu --status     # Show configuration and status
 hanasu setup        # Run first-time setup
 hanasu update       # Update to latest version
@@ -211,6 +210,14 @@ To fix:
 1. Remove or hide some menu bar icons (use a tool like [Bartender](https://www.macbartender.com/) or [Hidden Bar](https://github.com/dwarvesf/hidden))
 2. Verify Hanasu is running: `hanasu --status`
 3. The app is still functional even if the icon is hidden - the hotkey still works
+=======
+### View logs
+Hanasu logs to `~/Library/Logs/Hanasu/hanasu.log`. View recent logs with:
+```bash
+tail -f ~/Library/Logs/Hanasu/hanasu.log
+```
+
+Or open in Console.app: Applications → Utilities → Console → File → Open → select `hanasu.log`
 
 ## License
 

@@ -187,6 +187,96 @@ class TestRunUpdate:
             with pytest.raises(FileNotFoundError, match="(?i)source"):
                 run_update()
 
+    def test_raises_error_when_uv_not_found(self, tmp_path: Path):
+        """Update raises error if uv binary is not found."""
+        source_dir = tmp_path / ".hanasu" / "src"
+        source_dir.mkdir(parents=True)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            with patch("hanasu.main.shutil.which", return_value=None):
+                with pytest.raises(FileNotFoundError, match="(?i)uv"):
+                    run_update()
+
+    def test_uses_full_path_to_uv_binary(self, tmp_path: Path):
+        """Update uses the full path to uv, not just 'uv'."""
+        source_dir = tmp_path / ".hanasu" / "src"
+        source_dir.mkdir(parents=True)
+
+        # Create a fake uv binary in ~/.local/bin
+        local_bin = tmp_path / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        uv_path = local_bin / "uv"
+        uv_path.touch()
+        uv_path.chmod(0o755)
+
+        with patch("hanasu.main.subprocess.run") as mock_run:
+            with patch("hanasu.main.Path.home", return_value=tmp_path):
+                mock_run.return_value = MagicMock(returncode=0)
+
+                run_update()
+
+                # Find the uv sync call and verify it uses the full path
+                uv_calls = [c for c in mock_run.call_args_list if "sync" in str(c)]
+                assert len(uv_calls) > 0, "uv sync should be called"
+                # The command should use full path, not just "uv"
+                uv_call = uv_calls[0]
+                cmd = uv_call[0][0]  # First positional arg is the command list
+                assert str(uv_path) in str(cmd), f"Expected full path {uv_path}, got {cmd}"
+
+
+class TestFindUvBinary:
+    """Test uv binary discovery."""
+
+    def test_finds_uv_in_local_bin(self, tmp_path: Path):
+        """Finds uv in ~/.local/bin."""
+        from hanasu.main import find_uv_binary
+
+        local_bin = tmp_path / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        uv_path = local_bin / "uv"
+        uv_path.touch()
+        uv_path.chmod(0o755)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            result = find_uv_binary()
+
+        assert result == uv_path
+
+    def test_finds_uv_in_cargo_bin(self, tmp_path: Path):
+        """Finds uv in ~/.cargo/bin (Rust install location)."""
+        from hanasu.main import find_uv_binary
+
+        cargo_bin = tmp_path / ".cargo" / "bin"
+        cargo_bin.mkdir(parents=True)
+        uv_path = cargo_bin / "uv"
+        uv_path.touch()
+        uv_path.chmod(0o755)
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            with patch("hanasu.main.shutil.which", return_value=None):
+                result = find_uv_binary()
+
+        assert result == uv_path
+
+    def test_finds_uv_via_shutil_which(self, tmp_path: Path):
+        """Falls back to shutil.which if not in common locations."""
+        from hanasu.main import find_uv_binary
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            with patch("hanasu.main.shutil.which", return_value="/usr/local/bin/uv"):
+                result = find_uv_binary()
+
+        assert result == Path("/usr/local/bin/uv")
+
+    def test_raises_error_when_uv_not_found(self, tmp_path: Path):
+        """Raises FileNotFoundError with helpful message when uv not found."""
+        from hanasu.main import find_uv_binary
+
+        with patch("hanasu.main.Path.home", return_value=tmp_path):
+            with patch("hanasu.main.shutil.which", return_value=None):
+                with pytest.raises(FileNotFoundError, match="(?i)uv.*not found"):
+                    find_uv_binary()
+
 
 class TestChangeHotkey:
     """Test hotkey hot-reload functionality."""
@@ -1381,7 +1471,7 @@ class TestRunFileTranscription:
             cmd = call_args[0][0]
 
             # Command should include hanasu transcribe
-            assert "hanasu" in cmd[1] or cmd[0].endswith("python")
+            assert "hanasu" in cmd[1] or cmd[0].endswith(("python", "python3"))
             assert "transcribe" in cmd
             assert "/path/to/audio.mp3" in cmd
             assert "-o" in cmd
@@ -1521,7 +1611,7 @@ class TestRunFileTranscription:
             # Error dialog should be shown with timeout message
             app._show_transcription_error.assert_called_once()
             error_msg = app._show_transcription_error.call_args[0][0]
-            assert "timeout" in error_msg.lower()
+            assert "timed out" in error_msg.lower() or "timeout" in error_msg.lower()
 
     def test_no_error_shown_on_successful_completion(self, tmp_path: Path):
         """No error dialog shown when subprocess succeeds."""

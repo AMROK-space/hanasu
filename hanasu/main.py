@@ -10,6 +10,8 @@ import threading
 import typing
 from pathlib import Path
 
+import logging
+
 from hanasu import __version__
 from hanasu.config import (
     DEFAULT_CONFIG,
@@ -19,6 +21,7 @@ from hanasu.config import (
     load_dictionary,
     save_config,
 )
+from hanasu.logging_config import setup_logging
 from hanasu.hotkey import HotkeyListener
 from hanasu.injector import inject_text
 from hanasu.menubar import (
@@ -72,6 +75,10 @@ class Hanasu:
         self.config = load_config(config_dir)
         self.dictionary = load_dictionary(config_dir)
 
+        # Set up logging based on config
+        setup_logging(debug=self.config.debug, log_to_file=True)
+        self._logger = logging.getLogger("hanasu.main")
+
         # Initialize components - fallback to default if configured device unavailable
         self.recorder = Recorder(device=self.config.audio_device, fallback_to_default=True)
         self.transcriber = Transcriber(
@@ -88,10 +95,9 @@ class Hanasu:
         self._menubar_app = None
         self._model_change_in_progress = False
 
-        if self.config.debug:
-            print(f"[hanasu] Initialized with hotkey: {self.config.hotkey}")
-            print(f"[hanasu] Model: {self.config.model}")
-            print(f"[hanasu] Audio device: {self.config.audio_device or 'system default'}")
+        self._logger.info(f"Initialized with hotkey: {self.config.hotkey}")
+        self._logger.info(f"Model: {self.config.model}")
+        self._logger.info(f"Audio device: {self.config.audio_device or 'system default'}")
 
     def change_hotkey(self, new_hotkey: str) -> None:
         """Change the hotkey while running (hot-reload).
@@ -123,8 +129,7 @@ class Hanasu:
         if self._menubar_app:
             self._menubar_app.setHotkey_(new_hotkey)
 
-        if self.config.debug:
-            print(f"[hanasu] Hotkey changed to: {new_hotkey}")
+        self._logger.info(f"Hotkey changed to: {new_hotkey}")
 
     def change_model(self, new_model: str) -> None:
         """Change the whisper model (hot-swap).
@@ -137,8 +142,7 @@ class Hanasu:
         """
         # Validate model
         if new_model not in VALID_MODELS:
-            if self.config.debug:
-                print(f"[hanasu] Invalid model: {new_model}")
+            self._logger.warning(f"Invalid model: {new_model}")
             return
 
         # No-op if same model
@@ -147,14 +151,12 @@ class Hanasu:
 
         # Block while recording
         if self._recording:
-            if self.config.debug:
-                print("[hanasu] Cannot change model while recording")
+            self._logger.debug("Cannot change model while recording")
             return
 
         # Prevent concurrent model changes
         if self._model_change_in_progress:
-            if self.config.debug:
-                print("[hanasu] Model change already in progress")
+            self._logger.debug("Model change already in progress")
             return
 
         self._model_change_in_progress = True
@@ -194,8 +196,7 @@ class Hanasu:
                     self._menubar_app.setCurrentModel_(new_model)
                     self._menubar_app.refreshModelStates()
 
-                if self.config.debug:
-                    print(f"[hanasu] Model changed to: {new_model}")
+                self._logger.info(f"Model changed to: {new_model}")
             finally:
                 self._model_change_in_progress = False
 
@@ -242,16 +243,14 @@ class Hanasu:
             if self._menubar_app:
                 self._menubar_app.setUpdateStatus_(status)
 
-            if self.config.debug:
-                if status.update_available:
-                    print(f"[hanasu] Update available: v{status.latest_version}")
-                elif status.checked:
-                    print("[hanasu] Up to date")
-                else:
-                    print("[hanasu] Could not check for updates")
+            if status.update_available:
+                self._logger.info(f"Update available: v{status.latest_version}")
+            elif status.checked:
+                self._logger.debug("Up to date")
+            else:
+                self._logger.debug("Could not check for updates")
         except Exception as e:
-            if self.config.debug:
-                print(f"[hanasu] Error checking for updates: {e}")
+            self._logger.error(f"Error checking for updates: {e}")
 
     def _on_update(self) -> None:
         """Handle update request from menu bar."""
@@ -270,7 +269,7 @@ class Hanasu:
                 if self._menubar_app:
                     self._menubar_app.setUpdateComplete()
             except Exception as e:
-                print(f"Update failed: {e}")
+                self._logger.error(f"Update failed: {e}")
                 if self._menubar_app:
                     self._menubar_app.setUpdateFailed()
             finally:
@@ -289,7 +288,7 @@ class Hanasu:
 
     def _on_quit(self) -> None:
         """Handle quit from menu bar."""
-        print("\nShutting down...")
+        self._logger.info("Shutting down...")
         self.hotkey_listener.stop()
 
     def _on_hotkey_change(self, new_hotkey: str) -> None:
@@ -300,11 +299,10 @@ class Hanasu:
         """
         # Validate hotkey is not empty
         if not new_hotkey or not new_hotkey.strip():
-            print("Error: Hotkey cannot be empty")
+            self._logger.error("Hotkey cannot be empty")
             return
 
-        if self.config.debug:
-            print(f"[hanasu] Changing hotkey to: {new_hotkey}")
+        self._logger.debug(f"Changing hotkey to: {new_hotkey}")
 
         # Stop any in-progress recording before changing hotkey
         if self._recording:
@@ -312,8 +310,7 @@ class Hanasu:
             self.recorder.stop()
             if self._menubar_app:
                 self._menubar_app.setRecording_(False)
-            if self.config.debug:
-                print("[hanasu] Stopped recording due to hotkey change")
+            self._logger.debug("Stopped recording due to hotkey change")
 
         # Stop old listener before creating new one
         self.hotkey_listener.stop()
@@ -367,8 +364,7 @@ class Hanasu:
         if self._menubar_app:
             self._menubar_app.setRecording_(True)
 
-        if self.config.debug:
-            print("[hanasu] Recording started...")
+        self._logger.debug("Recording started...")
 
     def _on_hotkey_release(self) -> None:
         """Called when hotkey is released - transcribe and inject."""
@@ -383,27 +379,22 @@ class Hanasu:
         if self._menubar_app:
             self._menubar_app.setRecording_(False)
 
-        if self.config.debug:
-            print(f"[hanasu] Recording stopped. Audio length: {len(audio)} samples")
+        self._logger.debug(f"Recording stopped. Audio length: {len(audio)} samples")
 
         if len(audio) == 0:
-            if self.config.debug:
-                print("[hanasu] No audio recorded")
+            self._logger.debug("No audio recorded")
             return
 
         # Check minimum recording length (0.5 seconds at 16kHz)
         if len(audio) < 8000:
-            if self.config.debug:
-                print("[hanasu] Recording too short, ignoring")
+            self._logger.debug("Recording too short, ignoring")
             return
 
-        if self.config.debug:
-            print("[hanasu] Transcribing...")
+        self._logger.debug("Transcribing...")
 
         text = self.transcriber.transcribe(audio, dictionary=self.dictionary)
 
-        if self.config.debug:
-            print(f"[hanasu] Transcribed: {text}")
+        self._logger.debug(f"Transcribed: {text}")
 
         if text:
             inject_text(text, clear_after=self.config.clear_clipboard)
@@ -560,13 +551,50 @@ def is_model_cached(model: str) -> bool:
     return (cache_dir / model_cache_name).exists()
 
 
+def find_uv_binary() -> Path:
+    """Find the uv binary in common installation locations.
+
+    macOS menu bar apps don't inherit the shell's PATH, so we need to
+    look in common locations where uv might be installed.
+
+    Returns:
+        Path to the uv binary.
+
+    Raises:
+        FileNotFoundError: If uv is not found in any location.
+    """
+    home = Path.home()
+
+    # Common installation locations for uv
+    candidates = [
+        home / ".local" / "bin" / "uv",  # pipx, uv installer
+        home / ".cargo" / "bin" / "uv",  # Rust/cargo install
+        Path("/opt/homebrew/bin/uv"),  # Homebrew Apple Silicon
+        Path("/usr/local/bin/uv"),  # Homebrew Intel, system install
+    ]
+
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+
+    # Fall back to shutil.which for PATH lookup (already verifies exists + executable)
+    which_result = shutil.which("uv")
+    if which_result:
+        return Path(which_result)
+
+    raise FileNotFoundError(
+        "uv not found. Please ensure uv is installed.\n"
+        "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    )
+
+
 def run_update() -> None:
     """Update Hanasu to the latest version.
 
     Pulls latest code from git and syncs dependencies.
 
     Raises:
-        FileNotFoundError: If source directory doesn't exist.
+        FileNotFoundError: If source directory or uv binary doesn't exist.
         RuntimeError: If git or uv commands fail.
     """
     # New canonical location
@@ -582,6 +610,9 @@ def run_update() -> None:
                 "Source directory not found.\n"
                 "Please reinstall: curl -fsSL https://raw.githubusercontent.com/amrok-space/hanasu/main/install.sh | bash"
             )
+
+    # Find uv binary - menu bar apps don't inherit shell PATH
+    uv_path = find_uv_binary()
 
     print("Updating Hanasu...")
 
@@ -604,10 +635,10 @@ def run_update() -> None:
         raise RuntimeError(f"git pull failed: {result.stderr}")
     print(result.stdout.strip() or "Already up to date.")
 
-    # Sync dependencies
+    # Sync dependencies using explicit path to uv
     print("Syncing dependencies...")
     result = subprocess.run(
-        ["uv", "sync"],
+        [str(uv_path), "sync"],
         cwd=source_dir,
         capture_output=True,
         text=True,
@@ -772,14 +803,12 @@ def run_doctor() -> None:
     Verifies:
     - Install manifest exists and is valid
     - All artifacts exist and are correct
-    - LaunchAgent is properly configured
     - No conflicting installations
     """
     install_dir = Path.home() / ".hanasu"
     src_dir = install_dir / "src"
     manifest_file = install_dir / ".install-manifest"
     legacy_dir = Path.home() / ".hanasu-src"
-    plist_path = Path.home() / "Library" / "LaunchAgents" / "com.amrok.hanasu.plist"
     app_path = Path("/Applications/Hanasu.app")
     cli_link = Path.home() / ".local" / "bin" / "hanasu"
     venv_bin = src_dir / ".venv" / "bin" / "hanasu"
@@ -821,44 +850,6 @@ def run_doctor() -> None:
         print(f"  ✓ Virtual environment: {install_dir / '.venv'}")
     else:
         issues.append(f"Virtual environment missing or incomplete: {install_dir / '.venv'}")
-
-    # Check LaunchAgent
-    print()
-    print("Checking LaunchAgent...")
-    if plist_path.exists():
-        print(f"  ✓ Plist: {plist_path}")
-
-        # Check what it points to
-        try:
-            import subprocess
-
-            result = subprocess.run(
-                ["plutil", "-extract", "ProgramArguments.0", "raw", str(plist_path)],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                target = result.stdout.strip()
-                print(f"    Points to: {target}")
-                if not Path(target).exists():
-                    issues.append(f"LaunchAgent points to missing file: {target}")
-                elif str(venv_bin) not in target and str(install_dir) not in target:
-                    warnings.append(f"LaunchAgent points outside install dir: {target}")
-        except Exception:
-            pass
-
-        # Check if loaded
-        result = subprocess.run(
-            ["launchctl", "list", "com.amrok.hanasu"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            print("    Status: Loaded")
-        else:
-            print("    Status: Not loaded")
-    else:
-        issues.append(f"LaunchAgent missing: {plist_path}")
 
     # Check application bundle
     print()
