@@ -795,3 +795,119 @@ class TestStartAppLoop:
             start_app_loop()
 
             mock_helper.runEventLoop.assert_called_once()
+
+
+class TestSignalHandling:
+    """Test SIGINT signal handling for clean shutdown."""
+
+    def test_setup_signal_handlers_registers_sigint_handler(self):
+        """setup_signal_handlers registers a SIGINT handler."""
+        import signal
+
+        from hanasu.menubar import setup_signal_handlers
+
+        # Capture the original handler
+        original_handler = signal.getsignal(signal.SIGINT)
+
+        try:
+            setup_signal_handlers()
+
+            # Verify SIGINT handler was changed from default
+            new_handler = signal.getsignal(signal.SIGINT)
+            assert new_handler != signal.SIG_DFL
+            assert callable(new_handler)
+        finally:
+            # Restore original handler
+            signal.signal(signal.SIGINT, original_handler)
+
+    def test_sigint_handler_calls_stop_app_loop(self):
+        """SIGINT handler calls stop_app_loop to exit cleanly."""
+        import signal
+
+        from hanasu.menubar import setup_signal_handlers
+
+        original_handler = signal.getsignal(signal.SIGINT)
+
+        try:
+            with patch("hanasu.menubar.stop_app_loop") as mock_stop:
+                setup_signal_handlers()
+
+                # Get the registered handler and call it
+                handler = signal.getsignal(signal.SIGINT)
+                handler(signal.SIGINT, None)
+
+                mock_stop.assert_called_once()
+        finally:
+            signal.signal(signal.SIGINT, original_handler)
+
+    def test_start_app_loop_sets_up_signal_handlers(self):
+        """start_app_loop sets up signal handlers before running event loop."""
+        from hanasu.menubar import start_app_loop
+
+        with patch("hanasu.menubar.AppHelper") as mock_helper:
+            with patch("hanasu.menubar.setup_signal_handlers") as mock_setup:
+                start_app_loop()
+
+                # Signal handlers should be set up before runEventLoop
+                mock_setup.assert_called_once()
+                # Verify order: setup_signal_handlers called before runEventLoop
+                assert mock_setup.call_count == 1
+                assert mock_helper.runEventLoop.call_count == 1
+
+
+class TestChangeHotkeyFirstResponder:
+    """Test that hotkey dialog properly sets first responder for text field."""
+
+    def test_change_hotkey_sets_first_responder_directly(self):
+        """changeHotkey_ uses makeFirstResponder_ instead of delayed selector."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                with patch("hanasu.menubar.NSTextField") as mock_textfield_class:
+                    with patch("hanasu.menubar.parse_hotkey"):
+                        mock_alert = MagicMock()
+                        mock_window = MagicMock()
+                        mock_alert.window.return_value = mock_window
+                        mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                        mock_alert.runModal.return_value = 1001  # Cancel
+
+                        mock_textfield = MagicMock()
+                        mock_textfield_class.alloc.return_value.initWithFrame_.return_value = (
+                            mock_textfield
+                        )
+
+                        delegate = MenuBarApp.alloc().initWithCallbacks_({})
+                        delegate._status_item = MagicMock()
+                        delegate._hotkey_display = "cmd+v"
+
+                        delegate.changeHotkey_(None)
+
+                        # Should call makeFirstResponder_ with text field
+                        mock_window.makeFirstResponder_.assert_called_once_with(mock_textfield)
+
+    def test_change_hotkey_does_not_use_delayed_selector(self):
+        """changeHotkey_ should NOT use performSelector_withObject_afterDelay_inModes_."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            with patch("hanasu.menubar.NSAlert") as mock_alert_class:
+                with patch("hanasu.menubar.NSTextField") as mock_textfield_class:
+                    with patch("hanasu.menubar.parse_hotkey"):
+                        mock_alert = MagicMock()
+                        mock_alert_class.alloc.return_value.init.return_value = mock_alert
+                        mock_alert.runModal.return_value = 1001  # Cancel
+
+                        mock_textfield = MagicMock()
+                        mock_textfield_class.alloc.return_value.initWithFrame_.return_value = (
+                            mock_textfield
+                        )
+
+                        delegate = MenuBarApp.alloc().initWithCallbacks_({})
+                        delegate._status_item = MagicMock()
+                        delegate._hotkey_display = "cmd+v"
+
+                        delegate.changeHotkey_(None)
+
+                        # Should NOT use delayed selector
+                        mock_textfield.performSelector_withObject_afterDelay_inModes_.assert_not_called()

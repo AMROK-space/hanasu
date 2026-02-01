@@ -1,23 +1,22 @@
 """macOS menu bar integration using PyObjC."""
 
+import signal
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import objc
-import Quartz
 from AppKit import (
     NSAlert,
     NSApplication,
     NSMenu,
     NSMenuItem,
-    NSModalPanelRunLoopMode,
     NSOpenPanel,
     NSSavePanel,
     NSStatusBar,
     NSTextField,
     NSVariableStatusItemLength,
 )
-from Foundation import NSURL, NSArray, NSDefaultRunLoopMode, NSObject
+from Foundation import NSURL, NSObject
 from PyObjCTools import AppHelper
 
 from hanasu.config import MODEL_INFO
@@ -189,15 +188,8 @@ class MenuBarApp(NSObject):
         # Force layout so the window is created before setting first responder
         alert.layout()
 
-        # Use delayed selector with modal run loop mode to set first responder
-        # This ensures the text field receives keyboard focus when the modal opens
-        modes = NSArray.arrayWithObjects_(NSDefaultRunLoopMode, NSModalPanelRunLoopMode, None)
-        text_field.performSelector_withObject_afterDelay_inModes_(
-            "selectText:",
-            None,
-            0.0,
-            modes,
-        )
+        # Set first responder directly for reliable keyboard focus
+        alert.window().makeFirstResponder_(text_field)
 
         # Bring dialog to front (menu bar apps can have window ordering issues)
         alert.window().makeKeyAndOrderFront_(None)
@@ -482,8 +474,22 @@ def run_menubar_app(
     return delegate
 
 
+def setup_signal_handlers():
+    """Set up signal handlers for clean shutdown.
+
+    Registers a SIGINT handler that stops the event loop gracefully.
+    This allows Control+C to work in terminal when running the app.
+    """
+
+    def sigint_handler(signum, frame):
+        stop_app_loop()
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
+
 def start_app_loop():
     """Start the NSApplication event loop (blocking)."""
+    setup_signal_handlers()
     AppHelper.runEventLoop()
 
 

@@ -4,8 +4,6 @@ import logging
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 
 class TestSetupLogging:
     """Test logging setup functionality."""
@@ -97,9 +95,7 @@ class TestSetupLogging:
         # Test debug mode
         with patch("hanasu.logging_config.Path.mkdir"):
             logger_debug = setup_logging(debug=True, log_to_file=False)
-        stream_handlers = [
-            h for h in logger_debug.handlers if isinstance(h, logging.StreamHandler)
-        ]
+        stream_handlers = [h for h in logger_debug.handlers if isinstance(h, logging.StreamHandler)]
         assert stream_handlers[0].level == logging.DEBUG
 
         # Clear handlers for next test
