@@ -216,6 +216,7 @@ class Hanasu:
             on_update=self._on_update,
             on_transcribe_file=self._on_transcribe_file,
             on_model_change=self._on_model_change,
+            on_reopen=lambda: self._logger.info("App reopened (e.g., from Spotlight)"),
             version=__version__,
             current_model=self.config.model,
             is_model_cached=is_model_cached,
@@ -223,9 +224,11 @@ class Hanasu:
 
         self._logger.debug("Menu bar ready")
 
+        # Pre-warm transcription model in background (reduces first-use latency)
+        threading.Thread(target=self._prewarm_model, daemon=True).start()
+
         # Check for updates in background
-        update_thread = threading.Thread(target=self._check_for_updates, daemon=True)
-        update_thread.start()
+        threading.Thread(target=self._check_for_updates, daemon=True).start()
 
         # Start hotkey listener
         self._logger.debug("Starting hotkey listener...")
@@ -239,6 +242,15 @@ class Hanasu:
             print("\nShutting down...")
         finally:
             self.hotkey_listener.stop()
+
+    def _prewarm_model(self) -> None:
+        """Pre-warm the transcription model in background thread."""
+        try:
+            self._logger.debug("Pre-warming transcription model...")
+            self.transcriber.prewarm()
+            self._logger.debug("Model pre-warmed")
+        except Exception as e:
+            self._logger.warning(f"Failed to pre-warm model: {e}")
 
     def _check_for_updates(self) -> None:
         """Check for updates in background thread."""
@@ -371,10 +383,14 @@ class Hanasu:
         self._logger.debug("Recording started...")
 
     def _on_hotkey_release(self) -> None:
-        """Called when hotkey is released - transcribe and inject."""
+        """Called when hotkey is released - transcribe and inject.
+
+        Stops the recorder immediately but runs transcription in a background
+        thread to avoid blocking the event tap (which would cause macOS to
+        disable it on timeout).
+        """
         if not self._recording:
-            # May have been released without starting
-            pass
+            return
 
         self._recording = False
         audio = self.recorder.stop()
@@ -394,14 +410,23 @@ class Hanasu:
             self._logger.debug("Recording too short, ignoring")
             return
 
-        self._logger.debug("Transcribing...")
+        # Run transcription in background to avoid blocking the event tap
+        threading.Thread(
+            target=self._transcribe_and_inject,
+            args=(audio,),
+            daemon=True,
+        ).start()
 
-        text = self.transcriber.transcribe(audio, dictionary=self.dictionary)
-
-        self._logger.debug(f"Transcribed: {text}")
-
-        if text:
-            inject_text(text, clear_after=self.config.clear_clipboard)
+    def _transcribe_and_inject(self, audio) -> None:
+        """Transcribe audio and inject text (runs in background thread)."""
+        try:
+            self._logger.debug("Transcribing...")
+            text = self.transcriber.transcribe(audio, dictionary=self.dictionary)
+            self._logger.debug(f"Transcribed: {text}")
+            if text:
+                inject_text(text, clear_after=self.config.clear_clipboard)
+        except Exception as e:
+            self._logger.error(f"Transcription failed: {e}")
 
     def _on_transcribe_file(self) -> None:
         """Handle file transcription request from menu."""

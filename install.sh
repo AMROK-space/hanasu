@@ -235,8 +235,11 @@ cat > "$APP_PATH/Contents/Info.plist" << EOF
 EOF
 
 cat > "$APP_PATH/Contents/MacOS/hanasu" << EOF
-#!/bin/bash
-exec "$VENV_DIR/bin/hanasu"
+#!$VENV_DIR/bin/python3
+import sys
+sys.path.insert(0, "$SRC_DIR")
+from hanasu.main import main
+main()
 EOF
 chmod +x "$APP_PATH/Contents/MacOS/hanasu"
 

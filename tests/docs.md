@@ -21,6 +21,7 @@ tests/
   test_updater.py     <-- @/hanasu/updater.py
   test_main.py        <-- @/hanasu/main.py
   test_logging_config.py <-- @/hanasu/logging_config.py
+  test_install.py     <-- @/install.sh (launcher format validation)
 ```
 
 ### Core Implementation

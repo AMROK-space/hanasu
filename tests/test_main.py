@@ -1,6 +1,8 @@
 """Tests for main orchestration and CLI."""
 
 import os
+import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -97,11 +99,162 @@ class TestHanasu:
                                 mock_transcriber_class.return_value = mock_transcriber
 
                                 app = Hanasu(config_dir=tmp_path)
+                                app._recording = True
                                 app._on_hotkey_release()
+
+                                # Transcription runs in background thread — wait for it
+                                time.sleep(0.3)
 
                                 mock_recorder.stop.assert_called_once()
                                 mock_transcriber.transcribe.assert_called_once()
                                 mock_inject.assert_called_once_with("hello world", clear_after=True)
+
+
+class TestHotkeyReleaseNonBlocking:
+    """Test that hotkey release does not block the event tap thread."""
+
+    def test_on_hotkey_release_returns_quickly(self, tmp_path: Path):
+        """_on_hotkey_release must return before transcription completes."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder") as mock_recorder_class:
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.inject_text"):
+                                import numpy as np
+
+                                mock_config.return_value = MagicMock(
+                                    hotkey="ctrl+shift+space",
+                                    model="small",
+                                    language="en",
+                                    audio_device=None,
+                                    debug=False,
+                                    clear_clipboard=False,
+                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                mock_recorder = MagicMock()
+                                mock_recorder.stop.return_value = (
+                                    np.ones(16000, dtype=np.float32) * 0.1
+                                )
+                                mock_recorder_class.return_value = mock_recorder
+
+                                # Make transcribe block for 2 seconds
+                                transcribe_started = threading.Event()
+
+                                def slow_transcribe(*args, **kwargs):
+                                    transcribe_started.set()
+                                    time.sleep(2)
+                                    return "hello"
+
+                                mock_transcriber = MagicMock()
+                                mock_transcriber.transcribe.side_effect = slow_transcribe
+                                mock_transcriber_class.return_value = mock_transcriber
+
+                                app = Hanasu(config_dir=tmp_path)
+                                app._recording = True
+
+                                start = time.monotonic()
+                                app._on_hotkey_release()
+                                elapsed = time.monotonic() - start
+
+                                # Must return in under 0.5s (not wait for 2s transcription)
+                                assert elapsed < 0.5, (
+                                    f"_on_hotkey_release blocked for {elapsed:.1f}s — "
+                                    "transcription must run in a background thread"
+                                )
+
+                                # Wait for background transcription to actually start
+                                assert transcribe_started.wait(timeout=3), (
+                                    "Transcription was never started"
+                                )
+
+    def test_transcription_error_does_not_kill_hotkey_listener(self, tmp_path: Path):
+        """An exception during transcription must not crash the hotkey system."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder") as mock_recorder_class:
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.inject_text"):
+                                import numpy as np
+
+                                mock_config.return_value = MagicMock(
+                                    hotkey="ctrl+shift+space",
+                                    model="small",
+                                    language="en",
+                                    audio_device=None,
+                                    debug=False,
+                                    clear_clipboard=False,
+                                )
+                                mock_dict.return_value = MagicMock(terms=[], replacements={})
+
+                                mock_recorder = MagicMock()
+                                mock_recorder.stop.return_value = (
+                                    np.ones(16000, dtype=np.float32) * 0.1
+                                )
+                                mock_recorder_class.return_value = mock_recorder
+
+                                transcribe_done = threading.Event()
+
+                                def failing_transcribe(*args, **kwargs):
+                                    transcribe_done.set()
+                                    raise RuntimeError("Model failed to load")
+
+                                mock_transcriber = MagicMock()
+                                mock_transcriber.transcribe.side_effect = failing_transcribe
+                                mock_transcriber_class.return_value = mock_transcriber
+
+                                app = Hanasu(config_dir=tmp_path)
+                                app._recording = True
+
+                                # Should not raise
+                                app._on_hotkey_release()
+
+                                # Wait for the background thread to run
+                                transcribe_done.wait(timeout=3)
+                                time.sleep(0.1)  # Let the thread finish
+
+                                # App should be in a usable state (can record again)
+                                assert app._recording is False
+
+    def test_model_prewarm_called_at_startup(self, tmp_path: Path):
+        """Hanasu.run() should pre-warm the transcription model in the background."""
+        with patch("hanasu.main.load_config") as mock_config:
+            with patch("hanasu.main.load_dictionary") as mock_dict:
+                with patch("hanasu.main.Recorder"):
+                    with patch("hanasu.main.Transcriber") as mock_transcriber_class:
+                        with patch("hanasu.main.HotkeyListener"):
+                            with patch("hanasu.main.run_menubar_app") as mock_menubar:
+                                with patch("hanasu.main.start_app_loop") as mock_loop:
+                                    with patch("hanasu.main.check_for_update"):
+                                        mock_config.return_value = MagicMock(
+                                            hotkey="ctrl+shift+space",
+                                            model="small",
+                                            language="en",
+                                            audio_device=None,
+                                            debug=False,
+                                            clear_clipboard=False,
+                                        )
+                                        mock_dict.return_value = MagicMock(
+                                            terms=[], replacements={}
+                                        )
+                                        mock_menubar.return_value = MagicMock()
+
+                                        mock_transcriber = MagicMock()
+                                        mock_transcriber_class.return_value = mock_transcriber
+
+                                        # Make start_app_loop exit immediately
+                                        mock_loop.return_value = None
+
+                                        app = Hanasu(config_dir=tmp_path)
+                                        app.run()
+
+                                        # Give background threads time to start
+                                        time.sleep(0.5)
+
+                                        # Prewarm should have been called
+                                        mock_transcriber.prewarm.assert_called_once()
 
 
 class TestRunSetup:

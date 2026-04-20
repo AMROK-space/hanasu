@@ -855,6 +855,71 @@ class TestSignalHandling:
                 assert mock_helper.runEventLoop.call_count == 1
 
 
+class TestAppDelegateAndReopen:
+    """Test NSApplication delegate setup and reopen handling."""
+
+    def test_run_menubar_app_sets_nsapplication_delegate(self):
+        """run_menubar_app sets the MenuBarApp as NSApplication's delegate."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_ns_app = MagicMock()
+                mock_app.sharedApplication.return_value = mock_ns_app
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                delegate = run_menubar_app(hotkey="cmd+v")
+
+                mock_ns_app.setDelegate_.assert_called_once_with(delegate)
+
+    def test_reopen_calls_on_reopen_callback(self):
+        """applicationShouldHandleReopen triggers the on_reopen callback."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            reopen_callback = MagicMock()
+            delegate = MenuBarApp.alloc().initWithCallbacks_({"on_reopen": reopen_callback})
+            delegate._status_item = MagicMock()
+
+            result = delegate.applicationShouldHandleReopen_hasVisibleWindows_(MagicMock(), False)
+
+            reopen_callback.assert_called_once()
+            assert result is False
+
+    def test_reopen_without_callback_does_not_crash(self):
+        """applicationShouldHandleReopen works even without on_reopen callback."""
+        from hanasu.menubar import MenuBarApp
+
+        with patch("hanasu.menubar.NSStatusBar"):
+            delegate = MenuBarApp.alloc().initWithCallbacks_({})
+            delegate._status_item = MagicMock()
+
+            result = delegate.applicationShouldHandleReopen_hasVisibleWindows_(MagicMock(), False)
+
+            assert result is False
+
+    def test_run_menubar_app_accepts_on_reopen_callback(self):
+        """run_menubar_app accepts on_reopen callback parameter."""
+        from hanasu.menubar import run_menubar_app
+
+        with patch("hanasu.menubar.NSApplication") as mock_app:
+            with patch("hanasu.menubar.NSStatusBar") as mock_status_bar:
+                mock_app.sharedApplication.return_value = MagicMock()
+                mock_status_bar.systemStatusBar.return_value.statusItemWithLength_.return_value = (
+                    MagicMock()
+                )
+
+                reopen_callback = MagicMock()
+                delegate = run_menubar_app(
+                    hotkey="cmd+v",
+                    on_reopen=reopen_callback,
+                )
+
+                assert delegate._callbacks.get("on_reopen") == reopen_callback
+
+
 class TestChangeHotkeyFirstResponder:
     """Test that hotkey dialog properly sets first responder for text field."""
 
