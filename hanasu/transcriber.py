@@ -1,6 +1,7 @@
 """Transcription functionality using mlx-whisper."""
 
 import re
+import threading
 
 import mlx_whisper
 import numpy as np
@@ -30,18 +31,22 @@ class Transcriber:
         self.model = model
         self.language = language
         self.model_path = MODEL_PATHS.get(model, MODEL_PATHS["small"])
+        self._lock = threading.Lock()
 
     def prewarm(self) -> None:
         """Pre-load the model so the first transcription is fast.
 
         Runs a tiny silent audio buffer through the model to trigger loading.
+        Thread-safe: serialized with transcribe() via lock since mlx-whisper
+        uses Metal which is not safe for concurrent access.
         """
-        silent = np.zeros(16000, dtype=np.float32)  # 1 second of silence
-        mlx_whisper.transcribe(
-            silent,
-            path_or_hf_repo=self.model_path,
-            language=self.language,
-        )
+        with self._lock:
+            silent = np.zeros(16000, dtype=np.float32)  # 1 second of silence
+            mlx_whisper.transcribe(
+                silent,
+                path_or_hf_repo=self.model_path,
+                language=self.language,
+            )
 
     def transcribe(
         self,
@@ -66,13 +71,14 @@ class Transcriber:
         if dictionary and dictionary.terms:
             initial_prompt = "Vocabulary: " + ", ".join(dictionary.terms)
 
-        # Transcribe with mlx-whisper
-        result = mlx_whisper.transcribe(
-            audio,
-            path_or_hf_repo=self.model_path,
-            language=self.language,
-            initial_prompt=initial_prompt,
-        )
+        # Transcribe with mlx-whisper (lock serializes with prewarm)
+        with self._lock:
+            result = mlx_whisper.transcribe(
+                audio,
+                path_or_hf_repo=self.model_path,
+                language=self.language,
+                initial_prompt=initial_prompt,
+            )
 
         text = result["text"].strip()
 
