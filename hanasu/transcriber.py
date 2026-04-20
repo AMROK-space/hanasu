@@ -31,6 +31,18 @@ class Transcriber:
         self.language = language
         self.model_path = MODEL_PATHS.get(model, MODEL_PATHS["small"])
 
+    def prewarm(self) -> None:
+        """Pre-load the model so the first transcription is fast.
+
+        Runs a tiny silent audio buffer through the model to trigger loading.
+        """
+        silent = np.zeros(16000, dtype=np.float32)  # 1 second of silence
+        mlx_whisper.transcribe(
+            silent,
+            path_or_hf_repo=self.model_path,
+            language=self.language,
+        )
+
     def transcribe(
         self,
         audio: np.ndarray,

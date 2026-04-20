@@ -35,7 +35,7 @@ The application lifecycle:
 2. `Hanasu.__init__()` loads config, creates Recorder, Transcriber, and HotkeyListener
 3. `Hanasu.run()` sets up the menu bar, starts the hotkey listener, and enters the NSApplication event loop
 4. On hotkey press: `Recorder.start()` begins audio capture
-5. On hotkey release: `Recorder.stop()` returns audio buffer, `Transcriber.transcribe()` runs Whisper, `inject_text()` pastes result
+5. On hotkey release: `Recorder.stop()` returns audio buffer, then a background thread runs `Transcriber.transcribe()` and `inject_text()` to avoid blocking the event tap
 
 ### Things to Know
 
@@ -45,7 +45,13 @@ The application lifecycle:
 
 **Model caching**: Whisper models are downloaded to `~/.cache/huggingface/hub/` on first use. The `is_model_cached()` function checks this location to show download indicators in the UI.
 
-**Event tap thread safety**: The HotkeyListener runs in a background thread with its own CFRunLoop. UI updates from hotkey callbacks use `performSelectorOnMainThread_withObject_waitUntilDone_` to safely update the menu bar.
+**Event tap thread safety**: The HotkeyListener runs in a background thread with its own CFRunLoop. UI updates from hotkey callbacks use `performSelectorOnMainThread_withObject_waitUntilDone_` to safely update the menu bar. Transcription runs in a separate background thread to avoid blocking the event tap callback — if the callback blocks too long, macOS disables the tap and all hotkey detection stops.
+
+**Model pre-warming**: `Transcriber.prewarm()` is called in a background thread at startup. It runs a silent audio buffer through mlx-whisper to trigger model loading, weight evaluation, and JIT compilation, eliminating the cold-start latency on the first real transcription.
+
+**NSApplication delegate**: `MenuBarApp` is set as the formal `NSApplication` delegate via `setDelegate_()`, enabling macOS app lifecycle events like `applicationShouldHandleReopen:hasVisibleWindows:` (triggered when the user opens the app from Spotlight while it's already running).
+
+**App bundle launcher format**: The `.app` bundle uses a Python shebang script (not bash+exec) because `exec` breaks the macOS window server connection on macOS 26+, preventing the NSStatusItem from displaying.
 
 **Minimum recording length**: Recordings shorter than 0.5 seconds (8000 samples at 16kHz) are silently ignored to avoid noisy transcription from accidental key presses.
 

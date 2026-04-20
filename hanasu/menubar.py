@@ -277,6 +277,15 @@ class MenuBarApp(NSObject):
         if self._callbacks.get("on_transcribe_file"):
             self._callbacks["on_transcribe_file"]()
 
+    def applicationShouldHandleReopen_hasVisibleWindows_(self, app, has_visible_windows):
+        """Handle app reopen (e.g., from Spotlight when already running).
+
+        Called by macOS when the user opens the app while it's already running.
+        """
+        if self._callbacks.get("on_reopen"):
+            self._callbacks["on_reopen"]()
+        return False
+
     def quit_(self, sender):
         """Handle quit menu item."""
         if self._callbacks.get("on_quit"):
@@ -434,6 +443,7 @@ def run_menubar_app(
     on_update: Callable[[], None] | None = None,
     on_transcribe_file: Callable[[], None] | None = None,
     on_model_change: Callable[[str], None] | None = None,
+    on_reopen: Callable[[], None] | None = None,
     version: str = "",
     current_model: str = "small",
     is_model_cached: Callable[[str], bool] | None = None,
@@ -447,6 +457,7 @@ def run_menubar_app(
         on_update: Callback when user triggers update from menu.
         on_transcribe_file: Callback when user selects transcribe file from menu.
         on_model_change: Callback when user selects a different model.
+        on_reopen: Callback when user reopens the app (e.g., from Spotlight while running).
         version: Current app version to display.
         current_model: Currently selected model name.
         is_model_cached: Function to check if a model is downloaded.
@@ -454,7 +465,7 @@ def run_menubar_app(
     Returns:
         MenuBarApp instance for updating state.
     """
-    _ = NSApplication.sharedApplication()  # Initialize app (return value unused)
+    app = NSApplication.sharedApplication()
 
     # Create delegate
     delegate = MenuBarApp.alloc().initWithCallbacks_(
@@ -464,12 +475,16 @@ def run_menubar_app(
             "on_update": on_update,
             "on_transcribe_file": on_transcribe_file,
             "on_model_change": on_model_change,
+            "on_reopen": on_reopen,
         }
     )
     delegate.setHotkey_(hotkey)
     delegate._current_model = current_model
     delegate._is_model_cached_fn = is_model_cached
     delegate.setupStatusBar(version=version)
+
+    # Set as NSApplication delegate so macOS reopen events are handled
+    app.setDelegate_(delegate)
 
     return delegate
 
